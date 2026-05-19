@@ -5,9 +5,9 @@ argument-hint: ""
 
 # /window-setup — Interactive Configuration
 
-You are running first-time setup for the /window family of spawn commands. Walk Edward (or the current user) through **exactly 5 questions** using the `AskUserQuestion` tool (one question at a time). After all 5 answers, write the config file to `~/.claude/window-config.json` and confirm success.
+You are running first-time setup for the /window family of spawn commands. Walk the user through **exactly 5 questions** using the `AskUserQuestion` tool (one question at a time). After all 5 answers, write the config file to `~/.claude/window-config.json` and confirm success.
 
-**Tone:** terse, mobile-friendly, no markdown formatting in the answers you display (this may be invoked from Telegram/Beeper). Each question is multiple-choice. Use AskUserQuestion's structured options.
+**Tone:** terse, mobile-friendly, no markdown formatting in the answers you display (this may be invoked from a mobile/Telegram channel). Each question is multiple-choice. Use AskUserQuestion's structured options.
 
 ---
 
