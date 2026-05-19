@@ -1,0 +1,7 @@
+{
+  "default_workspace": "C:/Users/<your-name>/Documents/<your-workspace>",
+  "default_yolo": false,
+  "default_remote": false,
+  "extra_allow_list": [],
+  "_note": "Edit extra_allow_list to add directories not in Claude's trust list. Re-run /window-setup to regenerate this file interactively."
+}
