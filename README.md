@@ -20,7 +20,7 @@ Windows-only for now. Requires Windows Terminal (`wt.exe`) and the Claude Code n
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
 
-## What you get — 9 slash commands
+## What you get — 10 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -38,20 +38,35 @@ Windows-only for now. Requires Windows Terminal (`wt.exe`) and the Claude Code n
 
 `/window-list` — show recent spawns and which remote-controlled sessions are still alive.
 
-`/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session.
+`/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session. Accepts either the original name or a local alias set via `/window-rename`.
+
+`/window-rename <current-name> <new-name>` — give a spawned session a friendlier local alias. **LOCAL ONLY**: `/window-list`, `/window-kill`, and `/window-rename` use the new name; claude.ai/code and the mobile app keep showing the original. To get the new name on the web/app too, kill and respawn with `--name`.
 
 ## Shared argument shape
 
 All six spawn commands accept the same positional plus flag shape:
 
 ```
-/<command> [workspace-path] ["first prompt"] [--worktree]
+/<command> [workspace-path] ["first prompt"] [--worktree] [--name <label>]
 ```
 
 - No args → opens in your configured default workspace, interactive.
 - `<path>` → opens in that path (must be a Claude-Code-trusted directory, see Safety below).
 - `<path> "<prompt>"` → opens in that path and types the quoted prompt as the first message.
 - `--worktree` → adds `--worktree` to claude.exe to spawn in an isolated git worktree.
+- `--name <label>` → session is named `<host-user>-<label>-<HHMMSS>` instead of the default `<host>-<mode>-<HHMMSS>`. Makes sessions easier to identify in `/window-list` and on claude.ai/code.
+
+## Naming sessions
+
+Two ways to give a session a friendly name:
+
+1. **At launch time** — pass `--name <label>` to any spawn command. The label becomes part of the session's `--remote-control` name, so it shows up everywhere: terminal tools, claude.ai/code, mobile app. Example: `/window-yolo-remote --name bbw-staging` → session name `edward-bbw-staging-170842`.
+
+2. **After launch** — `/window-rename old-name new-name`. This is a **local alias only**. It changes what `/window-list`, `/window-kill`, and `/window-rename` accept and display, but claude.ai/code and the mobile app continue to show the original name (the `--remote-control` value is fixed at process startup and can't be mutated externally).
+
+If you want a renamed session to also show up under the new name on claude.ai/code, you have to kill the session and respawn it with `--name`. The rename command's output prints the exact `/window-kill` + relaunch commands to copy-paste.
+
+Alias storage: `~/.claude/window-aliases.json`. Killing a session prunes its alias entry automatically.
 
 ## Safety model
 
@@ -86,16 +101,18 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 
 ## Files installed by `install.ps1`
 
-- `~/.claude/commands/window.md` and 8 sibling slash-command files
+- `~/.claude/commands/window.md` and 9 sibling slash-command files
 - `~/.claude/hooks/spawn-window.py` — main launcher
 - `~/.claude/hooks/window-list.py` — list spawned sessions
 - `~/.claude/hooks/window-kill.py` — terminate spawned sessions
+- `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
+- `~/.claude/hooks/window_aliases.py` — shared alias-map helpers
 
 `install.ps1` will not overwrite an existing `window-config.json` if you have one.
 
 ## Uninstall
 
-Delete the 9 files from `~/.claude/commands/` and the 3 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json` and `~/.claude/window-log.jsonl`.
+Delete the 10 files from `~/.claude/commands/` and the 5 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, and `~/.claude/window-aliases.json`.
 
 ## License
 

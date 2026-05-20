@@ -8,6 +8,10 @@ Usage:
 from __future__ import annotations
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from window_aliases import load_aliases, resolve_to_actual  # noqa: E402
 
 
 def find_pids_by_session_name(name: str | None) -> list[tuple[int, str]]:
@@ -49,7 +53,11 @@ def main() -> int:
     if target == "--all":
         matches = find_pids_by_session_name(None)
     else:
-        matches = find_pids_by_session_name(target)
+        aliases = load_aliases()
+        actual = resolve_to_actual(target, aliases)
+        if actual != target:
+            print(f"Resolved alias '{target}' -> '{actual}'")
+        matches = find_pids_by_session_name(actual)
 
     if not matches:
         print(f"No matching sessions found for: {target}")
@@ -70,6 +78,15 @@ def main() -> int:
             killed += 1
         except subprocess.SubprocessError as e:
             print(f"  FAILED to kill PID {pid}: {e}", file=sys.stderr)
+
+    # Prune the alias entry for whatever we just killed (dead session, dead alias).
+    if killed and target != "--all":
+        from window_aliases import save_aliases
+        aliases = load_aliases()
+        actual = resolve_to_actual(target, aliases)
+        if actual in aliases:
+            del aliases[actual]
+            save_aliases(aliases)
 
     print(f"Killed {killed}/{len(matches)}.")
     return 0 if killed == len(matches) else 1

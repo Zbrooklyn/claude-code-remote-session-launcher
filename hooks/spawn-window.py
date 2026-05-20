@@ -14,10 +14,12 @@ Modes:
   daemon-yolo          headless, yolo + remote
 
 Arg shape (positional + flag):
-  [workspace-path] ["first prompt"] [--worktree]
+  [workspace-path] ["first prompt"] [--worktree] [--name <label>]
 
 If a positional path is given and exists, cd into it; else treat first
 positional as the prompt. --worktree flag adds --worktree to claude.
+--name <label> sets a friendly session name: {host_user}-{label}-{HHMMSS}
+instead of the default {host}-{mode}-{HHMMSS}.
 """
 from __future__ import annotations
 import json
@@ -109,34 +111,45 @@ MODES = {
 }
 
 
-def parse_args(raw: str) -> tuple[str | None, str | None, bool]:
-    """Return (workspace, first_prompt, worktree_flag).
+def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
+    """Return (workspace, first_prompt, worktree_flag, name_label).
 
     Handles paths with spaces by trying progressively longer joins of the
     positional tokens until one resolves to an existing directory. If no
     prefix is a valid dir but the first token looks path-like (starts with
     drive letter, ~, /, .), treat the longest prefix that looks path-like
     as the workspace.
+
+    --name <label> consumes the next token as the session label.
     """
     if not raw.strip():
-        return (None, None, False)
+        return (None, None, False, None)
     try:
         toks = shlex.split(raw)
     except ValueError:
         toks = raw.split()
 
     worktree = False
+    name_label: str | None = None
     positional: list[str] = []
-    for t in toks:
+    i = 0
+    while i < len(toks):
+        t = toks[i]
         if t == "--worktree":
             worktree = True
+        elif t == "--name":
+            if i + 1 < len(toks):
+                name_label = toks[i + 1]
+                i += 1
+            # if --name was last with no value, just ignore it
         elif t.startswith("--"):
             pass  # unknown flag — ignore for now
         else:
             positional.append(t)
+        i += 1
 
     if not positional:
-        return (None, None, worktree)
+        return (None, None, worktree, name_label)
 
     def _looks_pathlike(s: str) -> bool:
         return s.startswith((".", "/", "~")) or (len(s) >= 2 and s[1] == ":")
@@ -151,7 +164,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool]:
             workspace = str(candidate)
             if n < len(positional):
                 prompt = " ".join(positional[n:])
-            return (workspace, prompt, worktree)
+            return (workspace, prompt, worktree, name_label)
 
     # Nothing existed — but if the first token looks path-like, treat the
     # longest path-like prefix as a workspace anyway (so we can produce a
@@ -159,15 +172,18 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool]:
     if _looks_pathlike(positional[0]):
         # Take all consecutive tokens that don't look like prompts (no quotes etc.)
         workspace = " ".join(positional)
-        return (workspace, None, worktree)
+        return (workspace, None, worktree, name_label)
 
     # All positionals are a prompt
-    return (None, " ".join(positional), worktree)
+    return (None, " ".join(positional), worktree, name_label)
 
 
-def session_name(mode: str) -> str:
+def session_name(mode: str, label: str | None = None) -> str:
     host = socket.gethostname().lower()
     ts = datetime.now().strftime("%H%M%S")
+    if label:
+        host_user = host.split("-")[0]
+        return f"{host_user}-{label}-{ts}"
     return f"{host}-{mode}-{ts}"
 
 
@@ -184,7 +200,7 @@ def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, 
     return args
 
 
-def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool) -> int:
+def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool, label: str | None = None) -> int:
     cfg = MODES[mode]
     cwd = workspace or os.getcwd()
     if not Path(cwd).is_dir():
@@ -192,7 +208,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool)
         return 1
 
     # Generate session name ONCE so the print matches what was passed to claude.exe.
-    sess_name = session_name(mode)
+    sess_name = session_name(mode, label)
     claude_args = build_claude_args(mode, cfg, prompt, worktree, sess_name)
     title = f"{mode}: {Path(cwd).name}"
     profile = "Claude Code (Yolo)" if cfg["yolo"] else "Claude Code"
@@ -269,7 +285,7 @@ def main() -> int:
         )
         return 3
 
-    workspace, prompt, worktree = parse_args(raw)
+    workspace, prompt, worktree, label = parse_args(raw)
     if workspace is None:
         workspace = config.get("default_workspace") or os.getcwd()
 
@@ -288,7 +304,7 @@ def main() -> int:
         )
         return 4
 
-    return launch(mode, canonical, prompt, worktree)
+    return launch(mode, canonical, prompt, worktree, label)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from window_aliases import load_aliases  # noqa: E402
+
 LOG_PATH = Path.home() / ".claude" / "window-log.jsonl"
 
 
@@ -58,7 +61,7 @@ def running_session_names() -> set[str]:
     return names
 
 
-def format_entry(e: dict, alive_names: set[str]) -> str:
+def format_entry(e: dict, alive_names: set[str], aliases: dict[str, str]) -> str:
     ts = e.get("timestamp", "?")
     mode = e.get("mode", "?")
     workspace = e.get("workspace", "?")
@@ -70,7 +73,11 @@ def format_entry(e: dict, alive_names: set[str]) -> str:
     short_ws = Path(workspace).name if workspace and workspace != "?" else "?"
     parts = [f"{ts}", f"[{status}]", f"{mode}", f"in {short_ws}"]
     if sess:
-        parts.append(f"name={sess}")
+        alias = aliases.get(sess)
+        if alias:
+            parts.append(f"name={alias} (renamed from {sess})")
+        else:
+            parts.append(f"name={sess}")
     if e.get("worktree"):
         parts.append("worktree")
     return "  ".join(parts)
@@ -82,14 +89,20 @@ def main() -> int:
         print("No spawns logged yet. Try /window first.")
         return 0
     alive = running_session_names()
+    aliases = load_aliases()
     print(f"Recent spawns (last {len(entries)}, newest at bottom):\n")
     for e in entries:
-        print(format_entry(e, alive))
+        print(format_entry(e, alive, aliases))
     print()
     alive_count = sum(
         1 for e in entries if e.get("session_name") and e["session_name"] in alive
     )
     print(f"Alive remote-controlled sessions: {alive_count}")
+    if aliases:
+        print(
+            "\nNote: renamed names are LOCAL aliases only. claude.ai/code and the "
+            "mobile app still show each session's original --remote-control name."
+        )
     return 0
 
 
