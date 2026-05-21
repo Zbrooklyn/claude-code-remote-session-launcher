@@ -14,9 +14,32 @@ actual_session_name is the value passed to claude.exe via --remote-control.
 """
 from __future__ import annotations
 import json
+import re
 from pathlib import Path
 
 ALIASES_PATH = Path.home() / ".claude" / "window-aliases.json"
+
+# Labels become part of --remote-control session names. They must be safe
+# to embed in a shell argument, recognizable in logs, and not look like a
+# CLI flag. Allow: letters, digits, underscore, dot, dash -- must START
+# with an alphanumeric so leading dashes can't masquerade as flags.
+_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,49}$")
+
+
+def validate_label(label: str | None) -> tuple[bool, str]:
+    """Return (ok, error_message). Empty/None labels are rejected."""
+    if not label:
+        return (False, "label is empty")
+    if label.startswith("-"):
+        return (False, f"label {label!r} starts with '-' (looks like a CLI flag)")
+    if not _LABEL_RE.match(label):
+        return (
+            False,
+            f"label {label!r} has invalid characters or is too long. "
+            "Allowed: letters, digits, underscore, dot, dash. "
+            "Must start with a letter/digit. Max 50 chars.",
+        )
+    return (True, "")
 
 
 def load_aliases() -> dict[str, str]:

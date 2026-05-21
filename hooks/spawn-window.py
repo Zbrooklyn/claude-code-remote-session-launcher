@@ -138,10 +138,18 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
         if t == "--worktree":
             worktree = True
         elif t == "--name":
-            if i + 1 < len(toks):
+            # Only consume next token as the label if it's not itself a flag.
+            # This prevents "--name --worktree" from eating --worktree.
+            if i + 1 < len(toks) and not toks[i + 1].startswith("-"):
                 name_label = toks[i + 1]
                 i += 1
-            # if --name was last with no value, just ignore it
+            else:
+                # --name with no value, or followed by another flag
+                print(
+                    "ERROR: --name needs a non-empty label as the next argument.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
         elif t.startswith("--"):
             pass  # unknown flag — ignore for now
         else:
@@ -286,6 +294,18 @@ def main() -> int:
         return 3
 
     workspace, prompt, worktree, label = parse_args(raw)
+
+    # If --name was passed, validate the label before going any further.
+    # Bad labels would either become broken --remote-control values or
+    # collide with CLI flag parsing downstream.
+    if label is not None:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from window_aliases import validate_label  # noqa: E402
+        ok, err = validate_label(label)
+        if not ok:
+            print(f"ERROR: invalid --name value: {err}", file=sys.stderr)
+            return 2
+
     if workspace is None:
         workspace = config.get("default_workspace") or os.getcwd()
 

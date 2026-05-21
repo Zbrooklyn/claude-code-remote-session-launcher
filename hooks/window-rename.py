@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from window_aliases import load_aliases, resolve_to_actual, save_aliases  # noqa: E402
+from window_aliases import load_aliases, resolve_to_actual, save_aliases, validate_label  # noqa: E402
 
 LOG_PATH = Path.home() / ".claude" / "window-log.jsonl"
 
@@ -94,8 +94,9 @@ def main() -> int:
         )
         return 2
 
-    if not new or new.startswith("--"):
-        print(f"ERROR: invalid new name: {new!r}", file=sys.stderr)
+    ok, err = validate_label(new)
+    if not ok:
+        print(f"Can't use '{new}' -- {err}")
         return 2
 
     aliases = load_aliases()
