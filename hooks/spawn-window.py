@@ -37,13 +37,14 @@ CLAUDE_GLOBAL_JSON = Path.home() / ".claude.json"
 LOG_PATH = Path.home() / ".claude" / "window-log.jsonl"
 
 
-def log_spawn(mode: str, workspace: str, sess_name: str, prompt: str | None, worktree: bool) -> None:
+def log_spawn(mode: str, workspace: str, sess_name: str, prompt: str | None, worktree: bool, label: str | None = None) -> None:
     """Append a JSONL record of every successful spawn."""
     entry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "mode": mode,
         "workspace": workspace,
         "session_name": sess_name if sess_name else None,
+        "label": label,
         "prompt": prompt,
         "worktree": worktree,
     }
@@ -240,7 +241,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
             print(f"Launched daemon ({mode}) in {cwd}. Remote session: {sess_name}")
             print("Reach it at claude.ai/code or the official mobile app.")
             print("A new Windows Terminal window opened — minimize it manually if you want it out of sight.")
-            log_spawn(mode, cwd, sess_name, prompt, worktree)
+            log_spawn(mode, cwd, sess_name, prompt, worktree, label)
             return 0
         except FileNotFoundError:
             print("ERROR: wt.exe not found. Daemon mode requires Windows Terminal.", file=sys.stderr)
@@ -260,7 +261,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         if cfg["remote"]:
             msg += f". Remote session: {sess_name}"
         print(msg)
-        log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree)
+        log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label)
         return 0
     except FileNotFoundError:
         # WT not installed — fall back to cmd /k
@@ -269,7 +270,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         try:
             subprocess.Popen(fallback, close_fds=True)
             print(f"Launched ({mode}) via cmd fallback in {cwd}")
-            log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree)
+            log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label)
             return 0
         except Exception as e:
             print(f"ERROR: fallback launch failed: {e}", file=sys.stderr)

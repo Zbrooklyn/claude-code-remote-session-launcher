@@ -23,7 +23,7 @@ Windows-only for now. Requires:
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
 
-## What you get — 10 slash commands
+## What you get — 11 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -44,6 +44,8 @@ Windows-only for now. Requires:
 `/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session. Accepts either the original name or a local alias set via `/window-rename`.
 
 `/window-rename <current-name> <new-name>` — give a spawned session a friendlier local alias. **LOCAL ONLY**: `/window-list`, `/window-kill`, and `/window-rename` use the new name; claude.ai/code and the mobile app keep showing the original. To get the new name on the web/app too, kill and respawn with `--name`.
+
+`/window-attach <session-name-or-alias>` — bring a spawned session's Windows Terminal window to the foreground. Works on the actual `--remote-control` name or any local alias set via `/window-rename`. Brings the whole WT window forward; if multiple tabs are open, the right tab's title is `<label-or-session-name> | <workspace-name>` so you can spot it visually.
 
 ## Shared argument shape
 
@@ -104,11 +106,12 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 
 ## Files installed by `install.ps1`
 
-- `~/.claude/commands/window.md` and 9 sibling slash-command files
+- `~/.claude/commands/window.md` and 10 sibling slash-command files
 - `~/.claude/hooks/spawn-window.py` — main launcher
 - `~/.claude/hooks/window-list.py` — list spawned sessions
 - `~/.claude/hooks/window-kill.py` — terminate spawned sessions
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
+- `~/.claude/hooks/window-attach.py` — bring a session's terminal window to the foreground
 - `~/.claude/hooks/window_aliases.py` — shared alias-map helpers
 
 `install.ps1` preserves two files if they already exist in `~/.claude/`:
@@ -119,7 +122,7 @@ If you want to refresh either from the repo, delete the file first, then re-run 
 
 ## Uninstall
 
-Delete the 10 files from `~/.claude/commands/` and the 5 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, and `~/.claude/window-aliases.json`.
+Delete the 11 files from `~/.claude/commands/` and the 6 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, and `~/.claude/window-aliases.json`.
 
 ## License
 
