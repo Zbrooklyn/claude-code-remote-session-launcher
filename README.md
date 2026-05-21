@@ -111,7 +111,11 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
 - `~/.claude/hooks/window_aliases.py` — shared alias-map helpers
 
-`install.ps1` will not overwrite an existing `window-config.json` if you have one.
+`install.ps1` preserves two files if they already exist in `~/.claude/`:
+- `window-config.json` — your config (different per machine)
+- `commands/window-setup.md` — the setup wizard prompt (often customized per environment, e.g. user name, channel labels)
+
+If you want to refresh either from the repo, delete the file first, then re-run `install.ps1`.
 
 ## Uninstall
 

@@ -2,7 +2,9 @@
 # install.ps1 — Claude Code Remote Session Launcher installer
 #
 # Copies the slash commands and hook scripts into ~/.claude/.
-# Does not overwrite an existing window-config.json.
+# Does not overwrite an existing window-config.json or window-setup.md
+# (both are commonly user-customized). Delete those files first if you
+# want the latest repo versions.
 #
 # Requires PowerShell 7+ (pwsh.exe). Under Windows PowerShell 5.1
 # (powershell.exe) this script silently no-ops; the #Requires line
@@ -32,10 +34,15 @@ if (-not (Test-Path $claudeDir)) {
 New-Item -ItemType Directory -Force -Path $cmdsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $hooksDir | Out-Null
 
-# Copy command files
+# Copy command files. window-setup.md is preserved if already present
+# (users often customize the question wording for their environment).
 $cmdFiles = Get-ChildItem -Path (Join-Path $repoRoot "commands") -Filter "*.md"
 foreach ($f in $cmdFiles) {
     $dest = Join-Path $cmdsDir $f.Name
+    if ($f.Name -eq "window-setup.md" -and (Test-Path $dest)) {
+        Write-Host "  preserved:      $($f.Name) (delete it to refresh from repo)" -ForegroundColor Green
+        continue
+    }
     Copy-Item -Path $f.FullName -Destination $dest -Force
     Write-Host "  copied command: $($f.Name)"
 }
