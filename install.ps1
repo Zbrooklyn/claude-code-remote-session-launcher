@@ -1,7 +1,14 @@
+#Requires -Version 7
 # install.ps1 — Claude Code Remote Session Launcher installer
 #
 # Copies the slash commands and hook scripts into ~/.claude/.
 # Does not overwrite an existing window-config.json.
+#
+# Requires PowerShell 7+ (pwsh.exe). Under Windows PowerShell 5.1
+# (powershell.exe) this script silently no-ops; the #Requires line
+# above forces a clear error instead. If you only have 5.1, install
+# PowerShell 7 from https://github.com/PowerShell/PowerShell/releases
+# or run via WSL.
 
 $ErrorActionPreference = 'Stop'
 

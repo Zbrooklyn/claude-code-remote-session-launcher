@@ -10,12 +10,15 @@ This project does not orchestrate or control child sessions yet. It is the launc
 
 ## Status
 
-Windows-only for now. Requires Windows Terminal (`wt.exe`) and the Claude Code native build (`claude.exe`).
+Windows-only for now. Requires:
+- Windows Terminal (`wt.exe`)
+- Claude Code native build (`claude.exe`)
+- PowerShell 7+ (`pwsh.exe`) — the installer uses features that don't work under Windows PowerShell 5.1. Install from https://github.com/PowerShell/PowerShell/releases if you don't have it. The runtime hooks only need Python 3, so day-to-day usage works in any shell.
 
 ## Install
 
 1. Clone or download this repo.
-2. Open PowerShell in the repo root.
+2. Open PowerShell 7 (`pwsh`) in the repo root. The installer will refuse to run under Windows PowerShell 5.1.
 3. Run `./install.ps1`. It copies the slash commands and hook scripts into `~/.claude/`.
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
