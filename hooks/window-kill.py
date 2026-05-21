@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from window_aliases import load_aliases, resolve_to_actual  # noqa: E402
+from window_tags import load_tags, prune_session, save_tags  # noqa: E402
 
 
 def find_pids_by_session_name(name: str | None) -> list[tuple[int, str]]:
@@ -69,24 +70,41 @@ def main() -> int:
         print(f"  PID {pid}: {snippet}")
 
     killed = 0
-    for pid, _ in matches:
+    killed_actual_names: list[str] = []
+    for pid, cmd in matches:
         try:
             subprocess.run(
                 ["powershell.exe", "-NoProfile", "-Command", f"Stop-Process -Id {pid} -Force"],
                 check=True, timeout=5,
             )
             killed += 1
+            # Extract the --remote-control <name> token so we can prune alias + tags.
+            toks = cmd.split()
+            for i, tok in enumerate(toks):
+                if tok == "--remote-control" and i + 1 < len(toks):
+                    killed_actual_names.append(toks[i + 1].strip('"'))
+                    break
         except subprocess.SubprocessError as e:
             print(f"  FAILED to kill PID {pid}: {e}", file=sys.stderr)
 
-    # Prune the alias entry for whatever we just killed (dead session, dead alias).
-    if killed and target != "--all":
+    # Prune the alias and tag entries for whatever we just killed (dead session, dead metadata).
+    if killed_actual_names:
         from window_aliases import save_aliases
         aliases = load_aliases()
-        actual = resolve_to_actual(target, aliases)
-        if actual in aliases:
-            del aliases[actual]
+        tags = load_tags()
+        aliases_changed = False
+        tags_changed = False
+        for actual in killed_actual_names:
+            if actual in aliases:
+                del aliases[actual]
+                aliases_changed = True
+            if actual in tags:
+                prune_session(actual, tags)
+                tags_changed = True
+        if aliases_changed:
             save_aliases(aliases)
+        if tags_changed:
+            save_tags(tags)
 
     print(f"Killed {killed}/{len(matches)}.")
     return 0 if killed == len(matches) else 1
