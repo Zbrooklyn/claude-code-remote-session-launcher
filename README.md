@@ -23,7 +23,7 @@ Windows-only for now. Requires:
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
 
-## What you get — 15 slash commands
+## What you get — 16 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -41,7 +41,7 @@ Windows-only for now. Requires:
 
 `/window-list` — show recent spawns and which remote-controlled sessions are still alive. For alive sessions, also shows live status (idle/busy) and age. Filter with `--tag <name>` or `--status idle|busy`.
 
-`/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session. Accepts either the original name or a local alias set via `/window-rename`.
+`/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session, or `--tag <name>` to kill every session in a tag group (e.g. an entire fan-out batch). Accepts either the original name or a local alias set via `/window-rename`.
 
 `/window-rename <current-name> <new-name>` — give a spawned session a friendlier local alias. **LOCAL ONLY**: `/window-list`, `/window-kill`, and `/window-rename` use the new name; claude.ai/code and the mobile app keep showing the original. To get the new name on the web/app too, kill and respawn with `--name`.
 
@@ -56,6 +56,23 @@ Windows-only for now. Requires:
 `/window-wait <session-name-or-alias>` — block until a session goes idle. Use `--tag <name>` to wait on a whole group instead. `--timeout N` (default 300s) caps how long to wait; `--poll N` (default 2s) controls poll frequency. Exit code 0 = idle reached, 1 = timed out, 2 = bad input. This is what makes the fan-out pattern usable: spawn N tagged workers, then `/window-wait --tag <name>` blocks the orchestrator until they're all done.
 
 `/window-context <session-name-or-alias>` — show recent user/assistant turns from a spawned session's transcript without having to navigate to its terminal tab. `--turns N` (default 3) controls how many turns to print; `--full` disables the per-turn truncation. Works on dead sessions too, as long as the original transcript file still exists at `~/.claude/projects/<sanitized-cwd>/<sessionId>.jsonl`. Closes the orchestration loop with /window-wait: wait for the worker, then read what it produced.
+
+`/window-fanout <N> "<prompt>"` — spawn N worker sessions all running the same first prompt, all auto-tagged together so the whole batch can be waited on, read, and killed as one. Defaults to `--mode window-yolo-remote` (autonomous + remote-controllable). Optional `--tag <name>` overrides the auto-generated batch tag; `--name-prefix <prefix>` controls the per-worker name (default `fanout`, so workers are named `fanout-1`, `fanout-2`, etc.). Capped at N=20 per call. After spawning, prints the exact /window-wait, /window-context, and /window-kill commands for the group.
+
+## Orchestration loop
+
+The full delegate-and-collect pattern using the commands above:
+
+```
+/window-fanout 3 "audit the auth code in /src/auth and report any issues" --tag audit
+/window-wait --tag audit                  # blocks until all 3 are idle
+/window-context fanout-1                  # read worker 1's output
+/window-context fanout-2                  # read worker 2's output
+/window-context fanout-3                  # read worker 3's output
+/window-kill --tag audit                  # clean up the whole group
+```
+
+For a single delegated worker, the same pattern works with /window-yolo-remote --name + /window-wait + /window-context.
 
 ## Shared argument shape
 
@@ -116,16 +133,17 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 
 ## Files installed by `install.ps1`
 
-- `~/.claude/commands/window.md` and 14 sibling slash-command files
+- `~/.claude/commands/window.md` and 15 sibling slash-command files
 - `~/.claude/hooks/spawn-window.py` — main launcher
 - `~/.claude/hooks/window-list.py` — list spawned sessions (supports `--tag` and `--status` filters)
-- `~/.claude/hooks/window-kill.py` — terminate spawned sessions
+- `~/.claude/hooks/window-kill.py` — terminate spawned sessions (supports `--tag`)
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
 - `~/.claude/hooks/window-attach.py` — bring a session's terminal window to the foreground
 - `~/.claude/hooks/window-tag.py` — attach grouping tags to spawned sessions
 - `~/.claude/hooks/window-status.py` — show a session's live idle/busy state
 - `~/.claude/hooks/window-wait.py` — block until a session (or tag group) goes idle
 - `~/.claude/hooks/window-context.py` — show recent turns from a session's transcript
+- `~/.claude/hooks/window-fanout.py` — spawn N tagged workers with the same first prompt
 - `~/.claude/hooks/window_aliases.py` — shared alias-map helpers
 - `~/.claude/hooks/window_tags.py` — shared tag-map helpers
 - `~/.claude/hooks/agents_state.py` — shared wrapper over `claude agents --json`
@@ -138,7 +156,7 @@ If you want to refresh either from the repo, delete the file first, then re-run 
 
 ## Uninstall
 
-Delete the 15 files from `~/.claude/commands/` and the 12 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
+Delete the 16 files from `~/.claude/commands/` and the 13 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
 
 ## License
 

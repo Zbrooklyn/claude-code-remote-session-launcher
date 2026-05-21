@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""window-kill.py — terminate a spawned Claude session by session name.
+"""window-kill.py — terminate spawned Claude sessions.
 
 Usage:
   python window-kill.py <session-name>
-  python window-kill.py --all           # kill all spawned sessions
+  python window-kill.py --all              # kill every spawned session
+  python window-kill.py --tag <name>       # kill every session in this tag group
 """
 from __future__ import annotations
 import subprocess
@@ -12,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from window_aliases import load_aliases, resolve_to_actual  # noqa: E402
-from window_tags import load_tags, prune_session, save_tags  # noqa: E402
+from window_tags import load_tags, prune_session, save_tags, sessions_with_tag, validate_tag  # noqa: E402
 
 
 def find_pids_by_session_name(name: str | None) -> list[tuple[int, str]]:
@@ -47,13 +48,37 @@ def find_pids_by_session_name(name: str | None) -> list[tuple[int, str]]:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print("Usage: window-kill.py <session-name>  OR  window-kill.py --all", file=sys.stderr)
+    argv = sys.argv[1:]
+    if not argv:
+        print(
+            "Usage: window-kill.py <session-name>  OR  --all  OR  --tag <name>",
+            file=sys.stderr,
+        )
         return 2
-    target = sys.argv[1]
-    if target == "--all":
+
+    # --tag <name>: kill every session carrying this tag.
+    if argv[0] == "--tag":
+        if len(argv) < 2:
+            print("ERROR: --tag needs a tag name", file=sys.stderr)
+            return 2
+        tag = argv[1]
+        ok, err = validate_tag(tag)
+        if not ok:
+            print(f"Bad --tag value: {err}", file=sys.stderr)
+            return 2
+        tagged = sessions_with_tag(tag)
+        if not tagged:
+            print(f"No sessions tagged '{tag}'. Nothing to kill.")
+            return 0
+        matches: list[tuple[int, str]] = []
+        for actual in tagged:
+            matches.extend(find_pids_by_session_name(actual))
+        target = f"tag '{tag}' ({len(tagged)} tagged session(s))"
+    elif argv[0] == "--all":
+        target = "--all"
         matches = find_pids_by_session_name(None)
     else:
+        target = argv[0]
         aliases = load_aliases()
         actual = resolve_to_actual(target, aliases)
         if actual != target:
@@ -61,7 +86,17 @@ def main() -> int:
         matches = find_pids_by_session_name(actual)
 
     if not matches:
-        print(f"No matching sessions found for: {target}")
+        print(f"No matching live sessions found for: {target}")
+        # For tag mode, prune any stale tag entries since the sessions are gone.
+        if argv[0] == "--tag":
+            from window_tags import remove_tag as _rm
+            tags = load_tags()
+            stale = sessions_with_tag(argv[1], tags)
+            if stale:
+                print(f"  (pruning {len(stale)} stale tag entries)")
+                for actual in stale:
+                    prune_session(actual, tags)
+                save_tags(tags)
         return 1
 
     print(f"About to kill {len(matches)} session(s):")
