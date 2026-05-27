@@ -23,7 +23,7 @@ Windows-only for now. Requires:
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
 
-## What you get — 16 slash commands
+## What you get — 17 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -36,6 +36,8 @@ Windows-only for now. Requires:
 `/daemon` — headless background session (new minimized terminal window), only reachable via Anthropic remote-control.
 
 `/daemon-yolo` — headless plus skip-permissions. Autonomous, phone-only-reachable.
+
+`/window-resume <session-name-or-query>` — reopen an existing session instead of starting a fresh one. Fuzzy-matches the query against spawn labels and each session's first prompt, then relaunches it with `claude --resume <id>` in its **original workspace** (read from the transcript, not guessed) and its **original permission mode** (a YOLO session comes back YOLO). If the session is already alive it refuses to spawn a duplicate and points you at `/window-attach`. After launch it verifies the session is live and reports the permission mode read from the actual process — not the transcript, which can lag. Flags: `--mode <mode>` to force a spawn mode, `--print` to show the resolved command without launching, `--no-verify` to skip the liveness check, `--days N` to widen the lookback (default 14).
 
 `/window-setup` — first-time setup wizard. Five multiple-choice questions, writes the config file.
 
@@ -133,8 +135,9 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 
 ## Files installed by `install.ps1`
 
-- `~/.claude/commands/window.md` and 15 sibling slash-command files
-- `~/.claude/hooks/spawn-window.py` — main launcher
+- `~/.claude/commands/window.md` and 16 sibling slash-command files
+- `~/.claude/hooks/spawn-window.py` — main launcher (also handles `--resume <id>`)
+- `~/.claude/hooks/window-resume.py` — reopen a past session by name in its original workspace + permission mode
 - `~/.claude/hooks/window-list.py` — list spawned sessions (supports `--tag` and `--status` filters)
 - `~/.claude/hooks/window-kill.py` — terminate spawned sessions (supports `--tag`)
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
@@ -156,7 +159,7 @@ If you want to refresh either from the repo, delete the file first, then re-run 
 
 ## Uninstall
 
-Delete the 16 files from `~/.claude/commands/` and the 13 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
+Delete the 17 files from `~/.claude/commands/` and the 14 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
 
 ## License
 

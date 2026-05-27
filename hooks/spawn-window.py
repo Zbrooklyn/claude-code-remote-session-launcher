@@ -37,7 +37,7 @@ CLAUDE_GLOBAL_JSON = Path.home() / ".claude.json"
 LOG_PATH = Path.home() / ".claude" / "window-log.jsonl"
 
 
-def log_spawn(mode: str, workspace: str, sess_name: str, prompt: str | None, worktree: bool, label: str | None = None) -> None:
+def log_spawn(mode: str, workspace: str, sess_name: str, prompt: str | None, worktree: bool, label: str | None = None, resume_id: str | None = None) -> None:
     """Append a JSONL record of every successful spawn."""
     entry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -47,6 +47,7 @@ def log_spawn(mode: str, workspace: str, sess_name: str, prompt: str | None, wor
         "label": label,
         "prompt": prompt,
         "worktree": worktree,
+        "resume_id": resume_id,
     }
     try:
         with LOG_PATH.open("a", encoding="utf-8") as f:
@@ -112,8 +113,8 @@ MODES = {
 }
 
 
-def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
-    """Return (workspace, first_prompt, worktree_flag, name_label).
+def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str | None]:
+    """Return (workspace, first_prompt, worktree_flag, name_label, resume_id).
 
     Handles paths with spaces by trying progressively longer joins of the
     positional tokens until one resolves to an existing directory. If no
@@ -121,10 +122,13 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
     drive letter, ~, /, .), treat the longest prefix that looks path-like
     as the workspace.
 
-    --name <label> consumes the next token as the session label.
+    --name <label>   consumes the next token as the session label.
+    --resume <id>    consumes the next token as a Claude session id to resume.
+                     When present, claude is launched with --resume <id> so the
+                     session reopens its existing history instead of starting fresh.
     """
     if not raw.strip():
-        return (None, None, False, None)
+        return (None, None, False, None, None)
     try:
         toks = shlex.split(raw)
     except ValueError:
@@ -132,6 +136,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
 
     worktree = False
     name_label: str | None = None
+    resume_id: str | None = None
     positional: list[str] = []
     i = 0
     while i < len(toks):
@@ -151,6 +156,16 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
                     file=sys.stderr,
                 )
                 sys.exit(2)
+        elif t == "--resume":
+            if i + 1 < len(toks) and not toks[i + 1].startswith("-"):
+                resume_id = toks[i + 1]
+                i += 1
+            else:
+                print(
+                    "ERROR: --resume needs a session id as the next argument.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
         elif t.startswith("--"):
             pass  # unknown flag — ignore for now
         else:
@@ -158,7 +173,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
         i += 1
 
     if not positional:
-        return (None, None, worktree, name_label)
+        return (None, None, worktree, name_label, resume_id)
 
     def _looks_pathlike(s: str) -> bool:
         return s.startswith((".", "/", "~")) or (len(s) >= 2 and s[1] == ":")
@@ -173,7 +188,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
             workspace = str(candidate)
             if n < len(positional):
                 prompt = " ".join(positional[n:])
-            return (workspace, prompt, worktree, name_label)
+            return (workspace, prompt, worktree, name_label, resume_id)
 
     # Nothing existed — but if the first token looks path-like, treat the
     # longest path-like prefix as a workspace anyway (so we can produce a
@@ -181,10 +196,10 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None]:
     if _looks_pathlike(positional[0]):
         # Take all consecutive tokens that don't look like prompts (no quotes etc.)
         workspace = " ".join(positional)
-        return (workspace, None, worktree, name_label)
+        return (workspace, None, worktree, name_label, resume_id)
 
     # All positionals are a prompt
-    return (None, " ".join(positional), worktree, name_label)
+    return (None, " ".join(positional), worktree, name_label, resume_id)
 
 
 def session_name(mode: str, label: str | None = None) -> str:
@@ -196,8 +211,13 @@ def session_name(mode: str, label: str | None = None) -> str:
     return f"{host}-{mode}-{ts}"
 
 
-def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, sess_name: str) -> list[str]:
+def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, sess_name: str, resume_id: str | None = None) -> list[str]:
     args = [CLAUDE_EXE]
+    if resume_id:
+        # --resume reopens an existing session by id. Perm/remote/worktree flags
+        # still apply on top, so a YOLO resume stays YOLO. The id is selected
+        # before flags so claude resolves the session first.
+        args.extend(["--resume", resume_id])
     if cfg["yolo"]:
         args.append("--dangerously-skip-permissions")
     if cfg["remote"]:
@@ -209,7 +229,7 @@ def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, 
     return args
 
 
-def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool, label: str | None = None) -> int:
+def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool, label: str | None = None, resume_id: str | None = None) -> int:
     cfg = MODES[mode]
     cwd = workspace or os.getcwd()
     if not Path(cwd).is_dir():
@@ -218,7 +238,8 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
 
     # Generate session name ONCE so the print matches what was passed to claude.exe.
     sess_name = session_name(mode, label)
-    claude_args = build_claude_args(mode, cfg, prompt, worktree, sess_name)
+    claude_args = build_claude_args(mode, cfg, prompt, worktree, sess_name, resume_id)
+    verb = "Resumed" if resume_id else "Launched"
     title = f"{mode}: {Path(cwd).name}"
     profile = "Claude Code (Yolo)" if cfg["yolo"] else "Claude Code"
 
@@ -238,10 +259,10 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         ]
         try:
             subprocess.Popen(wt_args, close_fds=True)
-            print(f"Launched daemon ({mode}) in {cwd}. Remote session: {sess_name}")
+            print(f"{verb} daemon ({mode}) in {cwd}. Remote session: {sess_name}")
             print("Reach it at claude.ai/code or the official mobile app.")
             print("A new Windows Terminal window opened — minimize it manually if you want it out of sight.")
-            log_spawn(mode, cwd, sess_name, prompt, worktree, label)
+            log_spawn(mode, cwd, sess_name, prompt, worktree, label, resume_id)
             return 0
         except FileNotFoundError:
             print("ERROR: wt.exe not found. Daemon mode requires Windows Terminal.", file=sys.stderr)
@@ -257,11 +278,11 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
     ]
     try:
         subprocess.Popen(wt_args, close_fds=True)
-        msg = f"Launched terminal ({mode}) in {cwd}"
+        msg = f"{verb} terminal ({mode}) in {cwd}"
         if cfg["remote"]:
             msg += f". Remote session: {sess_name}"
         print(msg)
-        log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label)
+        log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label, resume_id)
         return 0
     except FileNotFoundError:
         # WT not installed — fall back to cmd /k
@@ -269,8 +290,8 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         fallback = ["cmd", "/c", "start", "cmd", "/k", f'cd /d "{cwd}" && {claude_cmd}']
         try:
             subprocess.Popen(fallback, close_fds=True)
-            print(f"Launched ({mode}) via cmd fallback in {cwd}")
-            log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label)
+            print(f"{verb} ({mode}) via cmd fallback in {cwd}")
+            log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label, resume_id)
             return 0
         except Exception as e:
             print(f"ERROR: fallback launch failed: {e}", file=sys.stderr)
@@ -294,7 +315,7 @@ def main() -> int:
         )
         return 3
 
-    workspace, prompt, worktree, label = parse_args(raw)
+    workspace, prompt, worktree, label, resume_id = parse_args(raw)
 
     # If --name was passed, validate the label before going any further.
     # Bad labels would either become broken --remote-control values or
@@ -325,7 +346,7 @@ def main() -> int:
         )
         return 4
 
-    return launch(mode, canonical, prompt, worktree, label)
+    return launch(mode, canonical, prompt, worktree, label, resume_id)
 
 
 if __name__ == "__main__":
