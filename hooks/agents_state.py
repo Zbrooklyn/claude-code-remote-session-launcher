@@ -19,17 +19,22 @@ command line separately and matching on pid.
 from __future__ import annotations
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
-CLAUDE_EXE = str(Path.home() / ".local" / "bin" / "claude.exe")
+sys.path.insert(0, str(Path(__file__).parent))
+from claude_env import find_claude_binary  # noqa: E402
 
 
 def fetch_agents(timeout_s: float = 10.0) -> list[dict[str, Any]]:
     """Return the list from `claude agents --json`. Empty list on failure."""
+    claude = find_claude_binary()
+    if not claude:
+        return []
     try:
         result = subprocess.run(
-            [CLAUDE_EXE, "agents", "--json"],
+            [claude, "agents", "--json"],
             capture_output=True, text=True, timeout=timeout_s,
         )
     except (subprocess.SubprocessError, FileNotFoundError):
