@@ -17,11 +17,29 @@ Windows-only for now. Requires:
 
 ## Install
 
-1. Clone or download this repo.
-2. Open PowerShell 7 (`pwsh`) in the repo root. The installer will refuse to run under Windows PowerShell 5.1.
-3. Run `./install.ps1`. It copies the slash commands and hook scripts into `~/.claude/`.
-4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
-5. Try `/window` from anywhere.
+```powershell
+git clone https://github.com/Zbrooklyn/claude-code-remote-session-launcher
+cd claude-code-remote-session-launcher
+pwsh ./install.ps1            # copies the slash commands + hooks into ~/.claude/
+```
+
+Then:
+
+1. Open PowerShell 7 (`pwsh`) for the install — the installer refuses to run under Windows PowerShell 5.1.
+2. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
+3. Verify it worked: `/window-live` lists the sessions running right now, and `/window` opens a fresh one in a new terminal.
+
+### If `claude` isn't on your PATH
+
+The installer and hooks locate the `claude` CLI automatically (PATH first, then common
+install locations). If your install lives somewhere unusual and isn't found, set the
+`CLAUDE_BINARY` environment variable to its full path:
+
+```powershell
+$env:CLAUDE_BINARY = "C:\full\path\to\claude.exe"   # add to your PowerShell profile to persist
+```
+
+Likewise, `CLAUDE_HOME` overrides the config directory if yours isn't `~/.claude`.
 
 ## What you get — 19 slash commands
 
