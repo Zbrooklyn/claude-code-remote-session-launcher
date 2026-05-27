@@ -9,16 +9,19 @@ never drift apart.
 Conventions match the other shared helpers (window_aliases.py, window_tags.py):
 underscore-named module, imported via `sys.path.insert(0, hooks_dir)`.
 
+Paths resolve at call time via claude_env.claude_home(), which honors the
+$CLAUDE_HOME env var -- so the test suite can isolate against a temp dir and
+never touch the real ~/.claude.
+
 What lives here:
   - Candidate           -- one resumable session + the metadata resume/find need
-  - list_resumable()    -- walk ~/.claude/projects/*/*.jsonl into Candidates
+  - list_resumable()    -- walk <claude_home>/projects/*/*.jsonl into Candidates
   - find_by_name()      -- fuzzy rank Candidates against a query
   - alive_session_ids() -- set of sessionIds with a live process (ground truth)
   - alive_pid_for_session() / transcript readers / slug helper
 
-What deliberately does NOT live here: anything that spawns, kills, or reads a
-live process's command line. Those are actions, and they belong to the command
-hooks, not this read-only catalog layer.
+What deliberately does NOT live here: anything that spawns or kills. Those are
+actions, and they belong to the command hooks, not this read-only catalog layer.
 """
 from __future__ import annotations
 import json
@@ -29,10 +32,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-CLAUDE_HOME = Path.home() / ".claude"
-PROJECTS_DIR = CLAUDE_HOME / "projects"
-SESSIONS_DIR = CLAUDE_HOME / "sessions"
-LOG_PATH = CLAUDE_HOME / "window-log.jsonl"
+sys.path.insert(0, str(Path(__file__).parent))
+from claude_env import claude_home  # noqa: E402
+
+
+def projects_dir() -> Path:
+    return claude_home() / "projects"
+
+
+def sessions_dir() -> Path:
+    return claude_home() / "sessions"
+
+
+def log_path() -> Path:
+    return claude_home() / "window-log.jsonl"
 
 
 @dataclass
@@ -135,10 +148,11 @@ def labels_by_session_id() -> dict[str, list[str]]:
     log a session_name but not the claude session_id, so the fuzzy matcher also
     searches first prompts. Resume + auto-capture entries DO carry session_id."""
     out: dict[str, list[str]] = {}
-    if not LOG_PATH.is_file():
+    lp = log_path()
+    if not lp.is_file():
         return out
     try:
-        with LOG_PATH.open("r", encoding="utf-8") as f:
+        with lp.open("r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -161,14 +175,15 @@ def labels_by_session_id() -> dict[str, list[str]]:
 # ---------- catalog + match ----------
 
 def list_resumable(max_age_days: int = 14) -> list[Candidate]:
-    """Walk ~/.claude/projects/*/*.jsonl into Candidates, newest first."""
-    if not PROJECTS_DIR.is_dir():
+    """Walk <claude_home>/projects/*/*.jsonl into Candidates, newest first."""
+    pd = projects_dir()
+    if not pd.is_dir():
         return []
     label_map = labels_by_session_id()
     cutoff = datetime.now().timestamp() - (max_age_days * 86400)
     out: list[Candidate] = []
     seen: set[str] = set()
-    for ws_dir in PROJECTS_DIR.iterdir():
+    for ws_dir in pd.iterdir():
         if not ws_dir.is_dir():
             continue
         for jsonl in ws_dir.glob("*.jsonl"):
@@ -230,12 +245,12 @@ def is_ambiguous(matches: list[tuple[float, Candidate]]) -> bool:
     return len(matches) > 1 and matches[1][0] > matches[0][0] * 0.8
 
 
-# ---------- liveness (ground truth from sessions/*.json) ----------
+# ---------- liveness (ground truth: process table, not just metadata files) ----------
 
 def running_claude_pids() -> set[int]:
     """Set of pids for claude processes ACTUALLY running right now (process
     table), not metadata files. This is what makes liveness ground-truth:
-    ~/.claude/sessions/*.json files linger after a hard kill or crash, so
+    <claude_home>/sessions/*.json files linger after a hard kill or crash, so
     trusting them alone reports dead sessions as alive."""
     if sys.platform == "win32":
         ps = "Get-CimInstance Win32_Process -Filter \"Name='claude.exe'\" | Select-Object -ExpandProperty ProcessId"
@@ -269,9 +284,10 @@ def running_claude_pids() -> set[int]:
 
 def _sessions_meta() -> list[dict]:
     out: list[dict] = []
-    if not SESSIONS_DIR.is_dir():
+    sd = sessions_dir()
+    if not sd.is_dir():
         return out
-    for f in SESSIONS_DIR.glob("*.json"):
+    for f in sd.glob("*.json"):
         try:
             out.append(json.loads(f.read_text(encoding="utf-8")))
         except Exception:

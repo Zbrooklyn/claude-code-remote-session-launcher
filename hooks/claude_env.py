@@ -21,6 +21,14 @@ from functools import lru_cache
 from pathlib import Path
 
 
+def claude_home() -> Path:
+    """The Claude config dir (~/.claude). Honors the $CLAUDE_HOME environment
+    variable so tests can point every hook at a temp dir instead of the real
+    one. Resolved at call time, never cached, so a test can set it per-case."""
+    override = os.environ.get("CLAUDE_HOME")
+    return Path(override) if override else Path.home() / ".claude"
+
+
 @lru_cache(maxsize=1)
 def find_claude_binary() -> str | None:
     """Return an absolute path to the claude CLI, or None if it can't be found."""
