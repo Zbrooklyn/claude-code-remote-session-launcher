@@ -13,3 +13,7 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+.pytest_cache/
+__pycache__/
+*.pyc
