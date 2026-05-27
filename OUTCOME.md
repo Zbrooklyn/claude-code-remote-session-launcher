@@ -65,13 +65,17 @@ the README should trust every sentence. Calm, precise, no hype.
   underscore-named helpers), never graft a foreign architecture in.
 
 ## Current gap (live)
-- [in progress] `/window-resume` does not yet exist in this repo. Building now on
-  branch `feat/harvest-resume`: extended `spawn-window.py` with additive `--resume`,
-  new `window-resume.py` front-end + `window-resume.md` command pending.
-- [ ] `/window-list` ground-truth process-table query (harvest from `live.py`) — not
-  yet started.
+- [x] `/window-resume` harvested. `spawn-window.py` extended with additive
+  `--resume`; `window-resume.py` + command + README done. Committed `bb89141`.
+  Dry-verified (`--print` against real transcripts); one real-spawn confirmation
+  still recommended before calling it Verified.
+- [x] `/window-live` ground-truth process-table query harvested from `live.py` as a
+  new command (complementary to `/window-list`, not a replacement). Live-fire
+  verified against the real process table (found 7 live claudes incl. profile
+  sessions absent from the spawn log; perm/parent/dedup all correct).
 - [ ] `find-or-create` brain — not yet started.
 - [ ] `claude-session-logger` retirement note — pending after harvest completes.
+- [ ] Edward: merge `feat/harvest-resume` -> master + push (prod-action-gate blocks AI).
 
 ## Lessons carried in (do not repeat)
 - **False YOLO claim**: permission mode IS preserved on resume via the flag; verify

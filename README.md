@@ -23,7 +23,7 @@ Windows-only for now. Requires:
 4. In a Claude Code session, run `/window-setup` and answer 5 questions to write your config file.
 5. Try `/window` from anywhere.
 
-## What you get — 17 slash commands
+## What you get — 18 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -41,7 +41,9 @@ Windows-only for now. Requires:
 
 `/window-setup` — first-time setup wizard. Five multiple-choice questions, writes the config file.
 
-`/window-list` — show recent spawns and which remote-controlled sessions are still alive. For alive sessions, also shows live status (idle/busy) and age. Filter with `--tag <name>` or `--status idle|busy`.
+`/window-list` — show recent spawns and which remote-controlled sessions are still alive. For alive sessions, also shows live status (idle/busy) and age. Filter with `--tag <name>` or `--status idle|busy`. This is the **history** view — it reads the spawn log.
+
+`/window-live` — ground-truth list of the Claude sessions **actually running right now**, read straight from the OS process table (not the spawn log). Shows sessions started any way — including plain `claude` and Terminal-profile sessions that never went through `/window` — collapses duplicate processes that share one session id (with a DUP count), and shows the permission mode each process is *actually* running with (read from its command line, which the log and transcript can't be trusted for). `-v` adds PIDs, parent process, and the user-visible-vs-background split; `--json` emits machine-readable output for agents. Use this to **verify live-vs-dead-vs-duplicate** when the spawn log and reality disagree. (Rule of thumb: `/window-list` = "what did I spawn?", `/window-live` = "what's alive right now?", `/window-status <name>` = "deep state of one session".)
 
 `/window-kill <session-name>` — terminate a spawned session by its remote-control name. Use `--all` to kill every spawned session, or `--tag <name>` to kill every session in a tag group (e.g. an entire fan-out batch). Accepts either the original name or a local alias set via `/window-rename`.
 
@@ -135,9 +137,10 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 
 ## Files installed by `install.ps1`
 
-- `~/.claude/commands/window.md` and 16 sibling slash-command files
+- `~/.claude/commands/window.md` and 17 sibling slash-command files
 - `~/.claude/hooks/spawn-window.py` — main launcher (also handles `--resume <id>`)
 - `~/.claude/hooks/window-resume.py` — reopen a past session by name in its original workspace + permission mode
+- `~/.claude/hooks/window-live.py` — ground-truth list of sessions actually running now (OS process table)
 - `~/.claude/hooks/window-list.py` — list spawned sessions (supports `--tag` and `--status` filters)
 - `~/.claude/hooks/window-kill.py` — terminate spawned sessions (supports `--tag`)
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
@@ -159,7 +162,7 @@ If you want to refresh either from the repo, delete the file first, then re-run 
 
 ## Uninstall
 
-Delete the 17 files from `~/.claude/commands/` and the 14 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
+Delete the 18 files from `~/.claude/commands/` and the 15 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
 
 ## License
 
