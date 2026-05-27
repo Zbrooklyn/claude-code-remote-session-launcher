@@ -165,6 +165,7 @@ Every successful spawn appends a JSONL line to `~/.claude/window-log.jsonl`. `/w
 - `~/.claude/hooks/window-live.py` — ground-truth list of sessions actually running now (OS process table)
 - `~/.claude/hooks/window-find.py` — look up whether a session about a topic already exists (the find-or-confirm-or-ask gate)
 - `~/.claude/hooks/window_sessions.py` — shared session-catalog + fuzzy-match helpers (used by window-resume + window-find)
+- `~/.claude/hooks/claude_env.py` — locates the claude CLI binary (PATH + known fallbacks), used by spawn-window + agents_state
 - `~/.claude/hooks/window-list.py` — list spawned sessions (supports `--tag` and `--status` filters)
 - `~/.claude/hooks/window-kill.py` — terminate spawned sessions (supports `--tag`)
 - `~/.claude/hooks/window-rename.py` — give sessions friendly local aliases
@@ -186,7 +187,7 @@ If you want to refresh either from the repo, delete the file first, then re-run 
 
 ## Uninstall
 
-Delete the 19 files from `~/.claude/commands/` and the 17 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
+Delete the 19 files from `~/.claude/commands/` and the 18 files from `~/.claude/hooks/`. Optionally delete `~/.claude/window-config.json`, `~/.claude/window-log.jsonl`, `~/.claude/window-aliases.json`, and `~/.claude/window-tags.json`.
 
 ## License
 
