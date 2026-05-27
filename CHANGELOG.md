@@ -43,3 +43,8 @@ population of Claude Code sessions on the machine — not just spawn new ones.
 ### Fixed
 - Dead sessions left behind stale `sessions/*.json` files and were reported as
   alive. Liveness now cross-checks the process table.
+- `/window-resume` could open a *second* window onto the same session when claude
+  cold-boot took longer than the first liveness timeout (the prior spawn
+  registered late, so the retry fired anyway). The loop now re-checks liveness
+  before re-spawning and waits longer on the first attempt. Found via live-fire
+  resume on a slow machine; covered by a regression test.

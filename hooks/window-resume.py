@@ -90,6 +90,75 @@ def _verify_permission_mode_from_process(pid: int) -> str | None:
         return None
 
 
+def _report_alive(pid: int, was_yolo: bool) -> int:
+    """Print the liveness/permission verdict for a resumed session and return an
+    exit code (0 OK, 1 if a YOLO session came back without bypassPermissions)."""
+    actual = _verify_permission_mode_from_process(pid)
+    verdict, note = "OK", ""
+    if was_yolo and actual != "bypassPermissions":
+        verdict = "WARN"
+        note = f" (expected bypassPermissions, process shows {actual})"
+    print(f"[{verdict}] alive (pid {pid}) -- verified perm from process: {actual}{note}")
+    return 0 if verdict == "OK" else 1
+
+
+def _spawn_and_verify(mode: str, args_str: str, sid: str, was_yolo: bool,
+                      verify: bool, *, first_timeout: float = 45,
+                      retry_timeout: float = 40, retries: int = 1) -> int:
+    """Spawn the resume window (delegating to spawn-window.py) and confirm the
+    session comes back alive.
+
+    Retries once on a miss, but RE-CHECKS liveness before re-spawning: a slow
+    claude cold-boot can exceed the first liveness timeout, so the prior spawn
+    may have registered during the wait. Re-checking first means a slow boot
+    never produces a second window onto the same session."""
+    spawned = False
+    for attempt in range(retries + 1):
+        if spawned:
+            pid = alive_pid_for_session(sid)
+            if pid:
+                return _report_alive(pid, was_yolo)
+
+        try:
+            result = subprocess.run(
+                [sys.executable, str(SPAWN_WINDOW), mode, args_str],
+                capture_output=True, text=True, timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            print("ERROR: spawn-window.py timed out after 30s.", file=sys.stderr)
+            return 1
+        out = (result.stdout + result.stderr).strip()
+        launched = result.returncode == 0 and ("Resumed" in out or "Launched" in out)
+        if not launched:
+            print(out or "(no output from spawn-window.py)")
+            if attempt < retries:
+                time.sleep(3)
+                continue
+            print(f"FAILED to resume {sid[:8]}.", file=sys.stderr)
+            return 1
+        spawned = True
+        print(out.splitlines()[0] if out else "(spawned)")
+
+        if not verify:
+            return 0
+
+        # Generous first wait: loading a large transcript and showing up in the
+        # process table can take 30s+. Too short here causes the spurious retry.
+        timeout = first_timeout if attempt == 0 else retry_timeout
+        pid = _await_liveness(sid, timeout)
+        if pid:
+            return _report_alive(pid, was_yolo)
+        if attempt < retries:
+            print("not alive yet, re-checking liveness before any retry...")
+            time.sleep(2)
+            continue
+
+    print(f"WARN: spawned but did not see a live pid for {sid[:8]} "
+          f"within the timeout. It may still be loading -- check /window-list.",
+          file=sys.stderr)
+    return 1
+
+
 # ---------- arg parsing ----------
 
 def parse_argv(argv: list[str]) -> dict:
@@ -192,51 +261,7 @@ def main() -> int:
     print(f"Resuming {cand.session_id[:8]} ({label}) in {cand.cwd}")
     print(f"  mode: {mode}  |  original perm: {cand.permission_mode or 'default'}")
 
-    retries = 1
-    for attempt in range(retries + 1):
-        try:
-            result = subprocess.run(
-                [sys.executable, str(SPAWN_WINDOW), mode, args_str],
-                capture_output=True, text=True, timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            print("ERROR: spawn-window.py timed out after 30s.", file=sys.stderr)
-            return 1
-        out = (result.stdout + result.stderr).strip()
-        launched = result.returncode == 0 and ("Resumed" in out or "Launched" in out)
-        if not launched:
-            print(out or "(no output from spawn-window.py)")
-            if attempt < retries:
-                time.sleep(3)
-                continue
-            print(f"FAILED to resume {cand.session_id[:8]}.", file=sys.stderr)
-            return 1
-
-        print(out.splitlines()[0] if out else "(spawned)")
-
-        if not opts["verify"]:
-            return 0
-
-        timeout = 25 if attempt == 0 else 40
-        pid = _await_liveness(cand.session_id, timeout)
-        if pid:
-            actual = _verify_permission_mode_from_process(pid)
-            verdict = "OK"
-            note = ""
-            if was_yolo and actual != "bypassPermissions":
-                verdict = "WARN"
-                note = f" (expected bypassPermissions, process shows {actual})"
-            print(f"[{verdict}] alive (pid {pid}) -- verified perm from process: {actual}{note}")
-            return 0 if verdict == "OK" else 1
-        if attempt < retries:
-            print("not alive yet, retrying once with a longer wait...")
-            time.sleep(2)
-            continue
-
-    print(f"WARN: spawned but did not see a live pid for {cand.session_id[:8]} "
-          f"within the timeout. It may still be loading -- check /window-list.",
-          file=sys.stderr)
-    return 1
+    return _spawn_and_verify(mode, args_str, cand.session_id, was_yolo, opts["verify"])
 
 
 if __name__ == "__main__":
