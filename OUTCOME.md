@@ -67,8 +67,19 @@ the README should trust every sentence. Calm, precise, no hype.
 ## Current gap (live)
 - [x] `/window-resume` harvested. `spawn-window.py` extended with additive
   `--resume`; `window-resume.py` + command + README done. Committed `bb89141`.
-  Dry-verified (`--print` against real transcripts); one real-spawn confirmation
-  still recommended before calling it Verified.
+  Every link independently verified: --resume arg construction (unit test);
+  find + cwd-read + mode-decision + command construction (--print on real
+  sessions telegram/hermes/bbw); session registration timing ~10s (well within
+  the 25/40s liveness timeout); the launch path is the same one the 6 working
+  spawn commands use. NOT yet observed as one integrated real-session resume,
+  because the only realistic target is one of Edward's actual (often YOLO)
+  conversations, and auto-resuming a YOLO session risks it auto-continuing work.
+  Cleanest true proof = Edward runs `/window-resume <name>` on a session he picks.
+- [x] BUG FOUND BY TESTING + FIXED: liveness was judged by whether a
+  `~/.claude/sessions/*.json` file exists, but those files linger after a hard
+  kill/crash -> dead sessions read as alive. `window_sessions.alive_session_ids`
+  / `alive_pid_for_session` now cross-check the OS process table (only a running
+  pid counts). Verified: a killed session now correctly flips to dead.
 - [x] `/window-live` ground-truth process-table query harvested from `live.py` as a
   new command (complementary to `/window-list`, not a replacement). Live-fire
   verified against the real process table (found 7 live claudes incl. profile

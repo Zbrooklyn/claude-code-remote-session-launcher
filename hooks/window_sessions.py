@@ -23,6 +23,8 @@ hooks, not this read-only catalog layer.
 from __future__ import annotations
 import json
 import re
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -230,34 +232,75 @@ def is_ambiguous(matches: list[tuple[float, Candidate]]) -> bool:
 
 # ---------- liveness (ground truth from sessions/*.json) ----------
 
-def alive_session_ids() -> set[str]:
-    """Set of sessionIds that currently have a live process metadata file."""
-    out: set[str] = set()
+def running_claude_pids() -> set[int]:
+    """Set of pids for claude processes ACTUALLY running right now (process
+    table), not metadata files. This is what makes liveness ground-truth:
+    ~/.claude/sessions/*.json files linger after a hard kill or crash, so
+    trusting them alone reports dead sessions as alive."""
+    if sys.platform == "win32":
+        ps = "Get-CimInstance Win32_Process -Filter \"Name='claude.exe'\" | Select-Object -ExpandProperty ProcessId"
+        try:
+            r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, timeout=10)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return set()
+        out: set[int] = set()
+        for tok in (r.stdout or "").split():
+            try:
+                out.add(int(tok))
+            except ValueError:
+                continue
+        return out
+    # POSIX
+    try:
+        r = subprocess.run(["ps", "-eo", "pid,comm,args"], capture_output=True, text=True, timeout=10)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return set()
+    out = set()
+    for line in r.stdout.splitlines()[1:]:
+        parts = line.split(None, 2)
+        if len(parts) >= 2 and "claude" in line.lower():
+            try:
+                out.add(int(parts[0]))
+            except ValueError:
+                continue
+    return out
+
+
+def _sessions_meta() -> list[dict]:
+    out: list[dict] = []
     if not SESSIONS_DIR.is_dir():
         return out
     for f in SESSIONS_DIR.glob("*.json"):
         try:
-            d = json.loads(f.read_text(encoding="utf-8"))
+            out.append(json.loads(f.read_text(encoding="utf-8")))
         except Exception:
             continue
-        sid = d.get("sessionId")
-        if sid:
+    return out
+
+
+def alive_session_ids() -> set[str]:
+    """Set of sessionIds whose process is ACTUALLY running. A metadata file is
+    only counted if its pid is in the live process table -- stale files left by
+    a crashed/killed session are correctly treated as dead."""
+    running = running_claude_pids()
+    out: set[str] = set()
+    for d in _sessions_meta():
+        sid, pid = d.get("sessionId"), d.get("pid")
+        if sid and pid and int(pid) in running:
             out.add(sid)
     return out
 
 
 def alive_pid_for_session(sid: str) -> int | None:
-    """Pid of a live session with this sessionId, or None."""
-    if not SESSIONS_DIR.is_dir():
-        return None
-    for f in SESSIONS_DIR.glob("*.json"):
-        try:
-            d = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+    """Pid of a session with this sessionId that is ACTUALLY running, or None.
+    Stale metadata for a dead pid is ignored."""
+    running = running_claude_pids()
+    for d in _sessions_meta():
         if d.get("sessionId") == sid:
             pid = d.get("pid")
-            return int(pid) if pid else None
+            if pid and int(pid) in running:
+                return int(pid)
     return None
 
 
