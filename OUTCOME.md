@@ -90,10 +90,15 @@ the README should trust every sentence. Calm, precise, no hype.
   routes (resume / attach-if-live / spawn) but never acts. find-or-confirm-or-ask
   protocol documented in README. Live-fire verified: `bbw` correctly routed to
   attach (already live, no duplicate), `telegram` to resume, nonsense to spawn.
-- [ ] `claude-session-logger` retirement note — pending Edward's go (public repo).
-- [ ] Edward: merge `feat/harvest-resume` -> master + push (prod-action-gate blocks AI).
-- [ ] Resume real-spawn confirmation (the one Verified gap) — Edward runs
-  `/window-resume <name>` as real-use acceptance, or AI runs throwaway test on go.
+- [x] **SHIPPED v1.0.0 (2026-05-27).** PR #1 merged to master (aa614f7c). Release
+  `v1.0.0` published. CI green on Ubuntu + Windows. 29-test suite + cross-platform CI.
+- [x] Resume real-spawn confirmation — DONE live: `claude --resume <id>` reattached
+  to the exact session (id `0bb2113e`, correct cwd, recovered original name).
+  Surfaced + fixed a double-spawn bug (slow cold-boot > first liveness timeout);
+  regression-tested.
+- [ ] `claude-session-logger` retirement note — still open. Recommendation: add a
+  deprecation banner to its README pointing here, then archive the repo on GitHub
+  (reversible). Separate repo; not part of the v1.0.0 ship.
 
 ## Lessons carried in (do not repeat)
 - **False YOLO claim**: permission mode IS preserved on resume via the flag; verify
@@ -105,9 +110,9 @@ the README should trust every sentence. Calm, precise, no hype.
 - **Big-transcript timeout**: generous liveness timeout + one retry.
 
 ## Next move
-Finish the additive `--resume` edits to `spawn-window.py`, write `window-resume.py`
-+ `window-resume.md`, update `install.ps1` + README, live-fire test against a real
-session, commit on `feat/harvest-resume`. Hand to Edward to push.
+Shipped. Only remaining (optional) item: retire `claude-session-logger` (README
+deprecation banner + archive on GitHub).
 
 ## Edward decision needed
 None open. Direction (launcher canonical + harvest 3 + drop MCP) approved 2026-05-26.
+v1.0.0 shipped 2026-05-27.
