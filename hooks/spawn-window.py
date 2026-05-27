@@ -31,7 +31,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-CLAUDE_EXE = str(Path.home() / ".local" / "bin" / "claude.exe")
+sys.path.insert(0, str(Path(__file__).parent))
+from claude_env import claude_binary_or_die  # noqa: E402
+
 CONFIG_PATH = Path.home() / ".claude" / "window-config.json"
 CLAUDE_GLOBAL_JSON = Path.home() / ".claude.json"
 LOG_PATH = Path.home() / ".claude" / "window-log.jsonl"
@@ -212,7 +214,7 @@ def session_name(mode: str, label: str | None = None) -> str:
 
 
 def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, sess_name: str, resume_id: str | None = None) -> list[str]:
-    args = [CLAUDE_EXE]
+    args = [claude_binary_or_die()]
     if resume_id:
         # --resume reopens an existing session by id. Perm/remote/worktree flags
         # still apply on top, so a YOLO resume stays YOLO. The id is selected
