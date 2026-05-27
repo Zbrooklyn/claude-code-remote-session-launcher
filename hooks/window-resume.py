@@ -5,8 +5,9 @@ Usage:
   python window-resume.py <session-name-or-query> [--mode MODE] [--print] [--no-verify]
 
 Finds a past session by fuzzy-matching <query> against spawn labels and the
-session's first user prompt, then reopens it with `claude --resume <id>` in its
-ORIGINAL workspace, preserving its ORIGINAL permission mode.
+session's first user prompt (shared catalog logic lives in window_sessions.py),
+then reopens it with `claude --resume <id>` in its ORIGINAL workspace, preserving
+its ORIGINAL permission mode.
 
 How it stays dependable:
   - Workspace is read from the transcript's own `cwd` field -- never decoded from
@@ -29,232 +30,27 @@ reuses the exact same trust-check, terminal-spawn, and logging as every other
 /window command. This file only decides WHICH session and HOW.
 """
 from __future__ import annotations
-import json
 import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from window_aliases import validate_label  # noqa: E402
+from window_sessions import (  # noqa: E402
+    list_resumable, find_by_name, is_ambiguous, alive_pid_for_session, slug,
+)
 
-CLAUDE_HOME = Path.home() / ".claude"
-PROJECTS_DIR = CLAUDE_HOME / "projects"
-SESSIONS_DIR = CLAUDE_HOME / "sessions"
-LOG_PATH = CLAUDE_HOME / "window-log.jsonl"
 SPAWN_WINDOW = Path(__file__).parent / "spawn-window.py"
 
 
-@dataclass
-class Candidate:
-    session_id: str
-    transcript: Path
-    cwd: str
-    mtime: float
-    first_prompt: str | None = None
-    permission_mode: str | None = None   # original mode from transcript
-    labels: list[str] = field(default_factory=list)
-
-
-# ---------- transcript readers ----------
-
-def _read_field_early(jsonl: Path, key: str, max_lines: int = 80) -> str | None:
-    """Return the first value of a top-level `key` found in the transcript head."""
-    try:
-        with jsonl.open("r", encoding="utf-8", errors="ignore") as f:
-            for i, line in enumerate(f):
-                if i > max_lines:
-                    break
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                val = obj.get(key)
-                if val:
-                    return val
-    except OSError:
-        return None
-    return None
-
-
-def _read_cwd(jsonl: Path) -> str | None:
-    """Authoritative workspace: the transcript's own `cwd` field."""
-    cwd = _read_field_early(jsonl, "cwd")
-    return cwd.replace("\\", "/") if cwd else None
-
-
-def _read_original_permission_mode(jsonl: Path, max_lines: int = 200) -> str | None:
-    """First permission-mode event = the mode the session was created with."""
-    try:
-        with jsonl.open("r", encoding="utf-8", errors="ignore") as f:
-            for i, line in enumerate(f):
-                if i > max_lines:
-                    break
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("type") == "permission-mode":
-                    return obj.get("permissionMode")
-    except OSError:
-        return None
-    return None
-
-
-def _read_first_user_prompt(jsonl: Path, max_lines: int = 80) -> str | None:
-    try:
-        with jsonl.open("r", encoding="utf-8", errors="ignore") as f:
-            for i, line in enumerate(f):
-                if i > max_lines:
-                    break
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("type") != "user":
-                    continue
-                content = obj.get("message", {}).get("content")
-                text = None
-                if isinstance(content, str):
-                    text = content
-                elif isinstance(content, list):
-                    for c in content:
-                        if isinstance(c, dict) and c.get("type") == "text":
-                            text = c.get("text")
-                            break
-                if not text:
-                    continue
-                text = text.strip()
-                # Skip system-injected / non-human first messages.
-                if text.startswith(("<", "Caveat:", "[Request", "===", "Launched")):
-                    continue
-                return text[:500]
-    except OSError:
-        return None
-    return None
-
-
-# ---------- spawn-label correlation ----------
-
-def _labels_by_session_id() -> dict[str, list[str]]:
-    """Map session_id -> [labels] from the spawn log. Resume entries record the
-    resume_id; fresh spawns record session_name/label only (no id), so this map
-    is best-effort -- the fuzzy matcher also searches first prompts."""
-    out: dict[str, list[str]] = {}
-    if not LOG_PATH.is_file():
-        return out
-    try:
-        with LOG_PATH.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    o = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                sid = o.get("session_id") or o.get("resume_id")
-                label = o.get("label") or o.get("name") or o.get("session_name")
-                if sid and label:
-                    out.setdefault(sid, [])
-                    if label not in out[sid]:
-                        out[sid].append(label)
-    except OSError:
-        pass
-    return out
-
-
-# ---------- catalog + match ----------
-
-def list_resumable(max_age_days: int = 14) -> list[Candidate]:
-    if not PROJECTS_DIR.is_dir():
-        return []
-    label_map = _labels_by_session_id()
-    cutoff = datetime.now().timestamp() - (max_age_days * 86400)
-    out: list[Candidate] = []
-    seen: set[str] = set()
-    for ws_dir in PROJECTS_DIR.iterdir():
-        if not ws_dir.is_dir():
-            continue
-        for jsonl in ws_dir.glob("*.jsonl"):
-            if "subagents" in jsonl.parts:
-                continue
-            sid = jsonl.stem
-            if sid in seen:
-                continue
-            try:
-                mtime = jsonl.stat().st_mtime
-            except OSError:
-                continue
-            if mtime < cutoff:
-                continue
-            seen.add(sid)
-            cwd = _read_cwd(jsonl) or ""
-            out.append(Candidate(
-                session_id=sid,
-                transcript=jsonl,
-                cwd=cwd,
-                mtime=mtime,
-                first_prompt=_read_first_user_prompt(jsonl),
-                permission_mode=_read_original_permission_mode(jsonl),
-                labels=label_map.get(sid, []),
-            ))
-    out.sort(key=lambda c: -c.mtime)
-    return out
-
-
-def find_by_name(query: str, candidates: list[Candidate]) -> list[tuple[float, Candidate]]:
-    """Fuzzy-match query against labels, session-id prefix, and first prompt."""
-    q = query.lower().strip()
-    q_tokens = set(re.findall(r"\w+", q))
-    scored: list[tuple[float, Candidate]] = []
-    now = datetime.now().timestamp()
-    for c in candidates:
-        score = 0.0
-        if len(q) >= 8 and c.session_id.lower().startswith(q):
-            score += 100
-        for lbl in c.labels:
-            lbl_l = lbl.lower()
-            if lbl_l == q:
-                score += 50
-            elif q in lbl_l or lbl_l in q:
-                score += 25
-            score += 5 * len(q_tokens & set(re.findall(r"\w+", lbl_l)))
-        if c.first_prompt:
-            pt = set(re.findall(r"\w+", c.first_prompt.lower()))
-            score += 1.5 * len(q_tokens & pt)
-        if score > 0:
-            # Mild recency tie-breaker, only among already-matching candidates.
-            score += min(1.0, (c.mtime - (now - 14 * 86400)) / (14 * 86400))
-            scored.append((score, c))
-    scored.sort(key=lambda x: -x[0])
-    return scored
-
-
-# ---------- liveness + permission verification (process = ground truth) ----------
-
-def _alive_pid_for_session(sid: str) -> int | None:
-    """Return the pid of a live session with this sessionId, or None."""
-    if not SESSIONS_DIR.is_dir():
-        return None
-    for f in SESSIONS_DIR.glob("*.json"):
-        try:
-            d = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if d.get("sessionId") == sid:
-            pid = d.get("pid")
-            return int(pid) if pid else None
-    return None
-
+# ---------- permission verification (process = ground truth) ----------
 
 def _await_liveness(sid: str, timeout_s: float) -> int | None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        pid = _alive_pid_for_session(sid)
+        pid = alive_pid_for_session(sid)
         if pid:
             return pid
         time.sleep(0.5)
@@ -295,11 +91,6 @@ def _verify_permission_mode_from_process(pid: int) -> str | None:
 
 
 # ---------- arg parsing ----------
-
-def _slug(label: str) -> str:
-    s = re.sub(r"[^a-zA-Z0-9-]+", "-", label).strip("-").lower()
-    return s or "session"
-
 
 def parse_argv(argv: list[str]) -> dict:
     opts = {"query": None, "mode": "auto", "print": False, "verify": True, "days": 14}
@@ -351,8 +142,7 @@ def main() -> int:
         print("Try /window-list to see live sessions, or widen with --days N.")
         return 1
 
-    # Disambiguation: refuse to guess if the top two scores are within 20%.
-    if len(matches) > 1 and matches[1][0] > matches[0][0] * 0.8:
+    if is_ambiguous(matches):
         print(f"Ambiguous: {query!r} matches multiple sessions about equally:")
         for score, c in matches[:5]:
             lbl = c.labels[0] if c.labels else "(no label)"
@@ -368,7 +158,7 @@ def main() -> int:
         return 1
 
     # Already alive? Don't spawn a duplicate.
-    existing_pid = _alive_pid_for_session(cand.session_id)
+    existing_pid = alive_pid_for_session(cand.session_id)
     if existing_pid:
         print(f"Session {cand.session_id[:8]} is already alive (pid {existing_pid}).")
         lbl = cand.labels[0] if cand.labels else cand.session_id[:8]
@@ -383,7 +173,7 @@ def main() -> int:
         mode = opts["mode"]
 
     label = cand.labels[0] if cand.labels else cand.session_id[:8]
-    label = _slug(label)
+    label = slug(label)
     ok, err = validate_label(label)
     if not ok:
         label = cand.session_id[:8]

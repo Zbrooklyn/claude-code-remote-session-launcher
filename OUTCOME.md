@@ -73,9 +73,16 @@ the README should trust every sentence. Calm, precise, no hype.
   new command (complementary to `/window-list`, not a replacement). Live-fire
   verified against the real process table (found 7 live claudes incl. profile
   sessions absent from the spawn log; perm/parent/dedup all correct).
-- [ ] `find-or-create` brain — not yet started.
-- [ ] `claude-session-logger` retirement note — pending after harvest completes.
+- [x] `find-or-create` harvested as `/window-find` + shared `window_sessions.py`
+  (extracted from window-resume; window-resume refactored to use it, regression
+  re-verified identical). The gate is a mechanism: `/window-find` lists matches +
+  routes (resume / attach-if-live / spawn) but never acts. find-or-confirm-or-ask
+  protocol documented in README. Live-fire verified: `bbw` correctly routed to
+  attach (already live, no duplicate), `telegram` to resume, nonsense to spawn.
+- [ ] `claude-session-logger` retirement note — pending Edward's go (public repo).
 - [ ] Edward: merge `feat/harvest-resume` -> master + push (prod-action-gate blocks AI).
+- [ ] Resume real-spawn confirmation (the one Verified gap) — Edward runs
+  `/window-resume <name>` as real-use acceptance, or AI runs throwaway test on go.
 
 ## Lessons carried in (do not repeat)
 - **False YOLO claim**: permission mode IS preserved on resume via the flag; verify
