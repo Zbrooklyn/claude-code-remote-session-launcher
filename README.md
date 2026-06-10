@@ -144,6 +144,23 @@ If you want a renamed session to also show up under the new name on claude.ai/co
 
 Alias storage: `~/.claude/window-aliases.json`. Killing a session prunes its alias entry automatically.
 
+## How sessions open — windows vs. tabs
+
+This is the part people (and agents) most often get wrong, so it's stated explicitly: **the launcher decides whether a session lands as a new tab or a new window, and the two families behave differently.**
+
+| Family | Windows Terminal call | Result |
+|--------|----------------------|--------|
+| Terminal modes (`window`, `window-remote`, `window-yolo`, `window-yolo-remote`) | `wt.exe -w 0 nt …` | **A new tab in your current/main Terminal window** (window id `0`). Spawn ten of these and you get ten tabs in one window, not ten windows. |
+| Daemon modes (`daemon`, `daemon-yolo`) | `wt.exe -w new …` | **Its own separate Terminal window**, so a background worker doesn't crowd your active tabs. |
+
+So if you batch-launch (e.g. `/window-resume-all --go` or a relaunch driver), every terminal session **stacks as tabs in window 0** — they are *not* spread across separate windows or grouped by topic. There is currently **no category/grouping logic**: it's one window, tabs in launch order.
+
+**Caveat — stray windows:** Windows Terminal occasionally spawns a *second* window during a fast batch, because `-w 0` has to resolve to a live window and several `wt` calls racing each other can each decide window 0 "isn't ready." Pre-existing sessions you opened earlier also already live in their own windows. So in practice a big batch can look like "mostly one window of tabs, plus a few loose windows." That's the `-w 0` race, not intentional grouping.
+
+**Forward hook — grouping by named window:** Windows Terminal supports `-w <name>` (a *named* window): if a window with that name exists, the session tabs into it; if not, WT creates it. Swapping the hardcoded `-w 0` for `-w <category>` (e.g. `-w Clients`, `-w Projects`, `-w Systems`) is the mechanism for grouped launches — one window per category, sessions as tabs inside. That capability is **not built yet**; this row documents the seam where it plugs in.
+
+The exact call sites are in `hooks/spawn-window.py` → `launch()` (terminal branch and daemon branch), each commented with its `-w` target.
+
 ## Safety model
 
 The launcher refuses to spawn into directories that aren't already trusted by Claude Code. This is intentional — a remote-spawn into an untrusted directory would just sit waiting for someone to click the trust dialog on the laptop, which defeats the point.

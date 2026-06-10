@@ -2,7 +2,7 @@
 """window-resume.py -- reopen an existing Claude Code session by name.
 
 Usage:
-  python window-resume.py <session-name-or-query> [--mode MODE] [--print] [--no-verify]
+  python window-resume.py <session-name-or-query> [--mode MODE] [--group NAME] [--print] [--no-verify]
 
 Finds a past session by fuzzy-matching <query> against spawn labels and the
 session's first user prompt (shared catalog logic lives in window_sessions.py),
@@ -162,12 +162,14 @@ def _spawn_and_verify(mode: str, args_str: str, sid: str, was_yolo: bool,
 # ---------- arg parsing ----------
 
 def parse_argv(argv: list[str]) -> dict:
-    opts = {"query": None, "mode": "auto", "print": False, "verify": True, "days": 14}
+    opts = {"query": None, "mode": "auto", "print": False, "verify": True, "days": 14, "group": None}
     i = 0
     while i < len(argv):
         t = argv[i]
         if t == "--mode" and i + 1 < len(argv):
             opts["mode"] = argv[i + 1]; i += 2; continue
+        if t == "--group" and i + 1 < len(argv):
+            opts["group"] = argv[i + 1]; i += 2; continue
         if t == "--print":
             opts["print"] = True; i += 1; continue
         if t == "--no-verify":
@@ -251,6 +253,10 @@ def main() -> int:
     # we pass the cwd as the leading positional and let the shared launcher do
     # the trust-check + terminal spawn.
     args_str = f'"{cand.cwd}" --name {label} --resume {cand.session_id}'
+    if opts["group"]:
+        # Route this session into a named Windows Terminal window (its category).
+        # spawn-window sanitizes the name to a safe `-w` token.
+        args_str += f' --group "{opts["group"]}"'
 
     if opts["print"]:
         print(f"python \"{SPAWN_WINDOW}\" {mode} '{args_str}'")

@@ -13,6 +13,16 @@ Modes:
   daemon               headless (hidden), --remote-control
   daemon-yolo          headless, yolo + remote
 
+Window targeting (where the session physically appears):
+  Terminal modes use `wt.exe -w 0 nt` -> a NEW TAB in your current/main
+  Windows Terminal window (window id 0). Batch-launch ten terminal sessions
+  and you get ten TABS in one window, NOT ten windows. There is no
+  category/grouping logic here -- one window, tabs in launch order.
+  Daemon modes use `wt.exe -w new` -> each gets its OWN separate window.
+  To group sessions into per-category windows, swap the hardcoded `-w 0`
+  for a named window `-w <category>` (WT tabs into the named window, or
+  creates it) -- that seam is the not-yet-built grouping feature.
+
 Arg shape (positional + flag):
   [workspace-path] ["first prompt"] [--worktree] [--name <label>]
 
@@ -24,6 +34,7 @@ instead of the default {host}-{mode}-{HHMMSS}.
 from __future__ import annotations
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -115,8 +126,8 @@ MODES = {
 }
 
 
-def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str | None]:
-    """Return (workspace, first_prompt, worktree_flag, name_label, resume_id).
+def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str | None, str | None]:
+    """Return (workspace, first_prompt, worktree_flag, name_label, resume_id, group).
 
     Handles paths with spaces by trying progressively longer joins of the
     positional tokens until one resolves to an existing directory. If no
@@ -128,9 +139,14 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
     --resume <id>    consumes the next token as a Claude session id to resume.
                      When present, claude is launched with --resume <id> so the
                      session reopens its existing history instead of starting fresh.
+    --group <name>   names the Windows Terminal window to open into. Terminal
+                     sessions sharing a group land as TABS in the same window;
+                     distinct groups get distinct windows. Omitted -> the default
+                     `-w 0` (current main window). This is the seam the category
+                     grouping feature drives.
     """
     if not raw.strip():
-        return (None, None, False, None, None)
+        return (None, None, False, None, None, None)
     try:
         toks = shlex.split(raw)
     except ValueError:
@@ -139,6 +155,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
     worktree = False
     name_label: str | None = None
     resume_id: str | None = None
+    group: str | None = None
     positional: list[str] = []
     i = 0
     while i < len(toks):
@@ -168,6 +185,16 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
                     file=sys.stderr,
                 )
                 sys.exit(2)
+        elif t == "--group":
+            if i + 1 < len(toks) and not toks[i + 1].startswith("-"):
+                group = toks[i + 1]
+                i += 1
+            else:
+                print(
+                    "ERROR: --group needs a window name as the next argument.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
         elif t.startswith("--"):
             pass  # unknown flag — ignore for now
         else:
@@ -175,7 +202,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
         i += 1
 
     if not positional:
-        return (None, None, worktree, name_label, resume_id)
+        return (None, None, worktree, name_label, resume_id, group)
 
     def _looks_pathlike(s: str) -> bool:
         return s.startswith((".", "/", "~")) or (len(s) >= 2 and s[1] == ":")
@@ -190,7 +217,7 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
             workspace = str(candidate)
             if n < len(positional):
                 prompt = " ".join(positional[n:])
-            return (workspace, prompt, worktree, name_label, resume_id)
+            return (workspace, prompt, worktree, name_label, resume_id, group)
 
     # Nothing existed — but if the first token looks path-like, treat the
     # longest path-like prefix as a workspace anyway (so we can produce a
@@ -198,10 +225,10 @@ def parse_args(raw: str) -> tuple[str | None, str | None, bool, str | None, str 
     if _looks_pathlike(positional[0]):
         # Take all consecutive tokens that don't look like prompts (no quotes etc.)
         workspace = " ".join(positional)
-        return (workspace, None, worktree, name_label, resume_id)
+        return (workspace, None, worktree, name_label, resume_id, group)
 
     # All positionals are a prompt
-    return (None, " ".join(positional), worktree, name_label, resume_id)
+    return (None, " ".join(positional), worktree, name_label, resume_id, group)
 
 
 def session_name(mode: str, label: str | None = None) -> str:
@@ -231,7 +258,21 @@ def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, 
     return args
 
 
-def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool, label: str | None = None, resume_id: str | None = None) -> int:
+def wt_window_target(group: str | None) -> str:
+    """Map a --group name to a Windows Terminal `-w` target.
+
+    No group -> "0" (current/main window, the historical default).
+    A group  -> a sanitized window name. WT tabs into a window with that name
+    if one exists, else creates it. Sanitize to [A-Za-z0-9_-] so the name is a
+    single safe `-w` token (spaces/quotes would break the wt arg or split it).
+    """
+    if not group:
+        return "0"
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "-", group).strip("-")
+    return safe or "0"
+
+
+def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool, label: str | None = None, resume_id: str | None = None, group: str | None = None) -> int:
     cfg = MODES[mode]
     cwd = workspace or os.getcwd()
     if not Path(cwd).is_dir():
@@ -270,9 +311,16 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
             print("ERROR: wt.exe not found. Daemon mode requires Windows Terminal.", file=sys.stderr)
             return 1
 
-    # Terminal mode — use Windows Terminal, fall back to cmd start
+    # Terminal mode — use Windows Terminal, fall back to cmd start.
+    # `-w <target> nt` = open a NEW TAB in window <target>. Default target "0"
+    # is your current/main WT window, so ungrouped sessions stack as TABS in
+    # one window. With --group, the target becomes a sanitized category name:
+    # WT tabs into the window with that name (creating it if absent), so each
+    # category gets its own window with its sessions as tabs. This is the
+    # category-grouping seam — driven by /window-resume-all reading parent_theme.
+    win_target = wt_window_target(group)
     wt_args = [
-        "wt.exe", "-w", "0", "nt",
+        "wt.exe", "-w", win_target, "nt",
         "--profile", profile,
         "--title", title,
         "-d", cwd,
@@ -281,6 +329,8 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
     try:
         subprocess.Popen(wt_args, close_fds=True)
         msg = f"{verb} terminal ({mode}) in {cwd}"
+        if win_target != "0":
+            msg += f" [window: {win_target}]"
         if cfg["remote"]:
             msg += f". Remote session: {sess_name}"
         print(msg)
@@ -317,7 +367,7 @@ def main() -> int:
         )
         return 3
 
-    workspace, prompt, worktree, label, resume_id = parse_args(raw)
+    workspace, prompt, worktree, label, resume_id, group = parse_args(raw)
 
     # If --name was passed, validate the label before going any further.
     # Bad labels would either become broken --remote-control values or
@@ -348,7 +398,7 @@ def main() -> int:
         )
         return 4
 
-    return launch(mode, canonical, prompt, worktree, label, resume_id)
+    return launch(mode, canonical, prompt, worktree, label, resume_id, group)
 
 
 if __name__ == "__main__":
