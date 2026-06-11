@@ -282,6 +282,50 @@ def running_claude_pids() -> set[int]:
     return out
 
 
+def running_claude_procs() -> dict[int, str]:
+    """{pid: command_line} for every running claude.exe.
+
+    Command line is the missing link for RESUMED sessions: a session spawned
+    with `claude --resume <sid>` carries that sid in its command line from the
+    instant it starts -- whereas its <claude_home>/sessions/<pid>.json metadata
+    file is written lazily (an idle resumed session can sit ready for minutes
+    without one). Matching on the command line makes liveness ground-truth for
+    resumed sessions, not just freshly-started ones."""
+    if sys.platform == "win32":
+        ps = (r'''Get-CimInstance Win32_Process -Filter "Name='claude.exe'" | '''
+              r'''ForEach-Object { "{0}`t{1}" -f $_.ProcessId, ($_.CommandLine -replace "`t"," ") }''')
+        try:
+            r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, timeout=10)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return {}
+        out: dict[int, str] = {}
+        for line in (r.stdout or "").splitlines():
+            if "\t" in line:
+                p, c = line.split("\t", 1)
+                try:
+                    out[int(p)] = c
+                except ValueError:
+                    continue
+        return out
+    # POSIX
+    try:
+        r = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, timeout=10)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return {}
+    out = {}
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if "claude" in line.lower():
+            parts = line.split(None, 1)
+            if len(parts) >= 2:
+                try:
+                    out[int(parts[0])] = parts[1]
+                except ValueError:
+                    continue
+    return out
+
+
 def _sessions_meta() -> list[dict]:
     out: list[dict] = []
     sd = sessions_dir()
@@ -296,27 +340,41 @@ def _sessions_meta() -> list[dict]:
 
 
 def alive_session_ids() -> set[str]:
-    """Set of sessionIds whose process is ACTUALLY running. A metadata file is
-    only counted if its pid is in the live process table -- stale files left by
-    a crashed/killed session are correctly treated as dead."""
-    running = running_claude_pids()
+    """Set of sessionIds whose process is ACTUALLY running. Two ground-truth
+    signals, unioned: (1) a metadata file whose pid is in the live process table
+    (covers freshly-started sessions), and (2) a `--resume <sid>` arg on a live
+    process command line (covers resumed sessions that haven't written metadata
+    yet). Stale metadata for a dead pid is ignored."""
+    procs = running_claude_procs()
+    running = set(procs)
     out: set[str] = set()
     for d in _sessions_meta():
         sid, pid = d.get("sessionId"), d.get("pid")
         if sid and pid and int(pid) in running:
             out.add(sid)
+    for cmd in procs.values():
+        m = re.search(r"--resume\s+(\S+)", cmd or "")
+        if m:
+            out.add(m.group(1))
     return out
 
 
 def alive_pid_for_session(sid: str) -> int | None:
     """Pid of a session with this sessionId that is ACTUALLY running, or None.
-    Stale metadata for a dead pid is ignored."""
-    running = running_claude_pids()
+
+    Checks the metadata-file mapping first (fresh sessions), then falls back to
+    scanning live process command lines for the sid (resumed sessions, whose
+    metadata file lags). Stale metadata for a dead pid is ignored."""
+    procs = running_claude_procs()
+    running = set(procs)
     for d in _sessions_meta():
         if d.get("sessionId") == sid:
             pid = d.get("pid")
             if pid and int(pid) in running:
                 return int(pid)
+    for pid, cmd in procs.items():
+        if sid and sid in (cmd or ""):
+            return pid
     return None
 
 
