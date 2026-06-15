@@ -367,6 +367,29 @@ def main() -> int:
         )
         return 3
 
+    # --- Enforce remote-control by default (window-config: default_remote) ---
+    # Every spawned session must be remote-controllable (reachable from Edward's
+    # phone / claude.ai), so a session can never be "lost" as a local-only tab.
+    # If default_remote is on (the default), upgrade any LOCAL mode to its remote
+    # equivalent. Escape hatch: pass `--local` in args to force a local session.
+    try:
+        _enf_toks = shlex.split(raw)
+    except ValueError:
+        _enf_toks = raw.split()
+    allow_local = "--local" in _enf_toks
+    if allow_local:
+        _enf_toks = [t for t in _enf_toks if t != "--local"]
+        raw = " ".join(shlex.quote(t) for t in _enf_toks)
+    REMOTE_EQUIV = {"window": "window-remote", "window-yolo": "window-yolo-remote"}
+    if config.get("default_remote", True) and not allow_local and mode in REMOTE_EQUIV:
+        upgraded = REMOTE_EQUIV[mode]
+        print(
+            f"[enforced] default_remote -> upgrading '{mode}' to '{upgraded}' "
+            "(remote-control is mandatory; pass --local to override).",
+            file=sys.stderr,
+        )
+        mode = upgraded
+
     workspace, prompt, worktree, label, resume_id, group = parse_args(raw)
 
     # If --name was passed, validate the label before going any further.
