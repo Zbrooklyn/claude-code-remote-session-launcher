@@ -26,6 +26,7 @@ from worker_runtime import (
     spawn_worker,
     terminate_worker,
 )
+from team_layout import create_workers, normalize_main_and_workers
 
 
 class OrchestrationError(RuntimeError):
@@ -42,11 +43,25 @@ class Orchestrator:
 
     def spawn(self, name: str, role: str, engine: str = "powershell.exe",
               parent: str | None = None, agent_type: str = "powershell",
-              cwd: str | None = None) -> dict:
-        return spawn_worker(self.store, name, role, engine, parent, agent_type, cwd)
+              cwd: str | None = None, direction: str = "right") -> dict:
+        return spawn_worker(self.store, name, role, engine, parent, agent_type, cwd, direction)
 
     def refresh(self, worker_id: str) -> dict:
         return refresh_worker_topology(self.store, worker_id)
+
+    def team(self, main_id: str, roles: list[str], engine: str = "powershell.exe") -> dict:
+        """Create named workers below a preserved bridge-owned MAIN."""
+        main=self.store.worker(main_id)
+        if main["role"] != "controller":
+            raise OrchestrationError("MAIN_MUST_BE_A_CONTROLLER_WORKER")
+        workers=create_workers(self.store, main_id, roles, engine)
+        layout=normalize_main_and_workers(self.store, main_id, [w["id"] for w in workers])
+        return {"main_id":main_id,"workers":[self.store.worker(w["id"]) for w in workers],"layout":layout}
+
+    def worker_by_role(self, role: str) -> dict:
+        matches=[w for w in self.store.workers() if w["role"].lower()==role.lower() and w["state"] not in {"failed","disconnected"}]
+        if len(matches)!=1: raise OrchestrationError(f"ROLE_NOT_UNIQUE: {role}")
+        return matches[0]
 
     def create_task(self, title: str, parent: str | None = None,
                     completion: dict | None = None, verification: dict | None = None) -> dict:

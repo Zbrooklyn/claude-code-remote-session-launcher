@@ -43,7 +43,7 @@ def _topology_for_binding(certificate: str, ref: dict, screen: str, window_name:
 
 
 def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None = None,
-                   cwd: str | None = None) -> dict:
+                   cwd: str | None = None, direction: str = "right") -> dict:
     certificate = f"ORCH_{worker['id'][-12:]}_{secrets.token_hex(12)}"
     # Windows Terminal owns the pane title through --title. Do not put a
     # semicolon in this command: wt interprets it as a commandline separator.
@@ -53,7 +53,7 @@ def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None 
         subprocess.run(["wt.exe", "-w", window_name, "new-tab", "-d", cwd or str(Path.cwd()), "--title", certificate, engine, "-NoExit", "-Command", command],
                        check=False, timeout=15)
     else:
-        split_relative(parent["topology_json"], engine, certificate, command)
+        split_relative(parent["topology_json"], engine, certificate, command, direction)
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         pid = _query_worker_process(engine, certificate)
@@ -76,12 +76,12 @@ def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None 
 
 def spawn_worker(store: Store, name: str, role: str, engine: str = "powershell.exe",
                  parent_worker_id: str | None = None, agent_type: str = "powershell",
-                 cwd: str | None = None) -> dict:
+                 cwd: str | None = None, direction: str = "right") -> dict:
     worker = store.create_worker(name, role, agent_type)
     parent = store.worker(parent_worker_id) if parent_worker_id else None
     if parent and not parent.get("topology_json"):
         raise WorkerRuntimeError("PARENT_TOPOLOGY_UNBOUND")
-    launched = _launch_worker(store, worker, engine, parent, cwd)
+    launched = _launch_worker(store, worker, engine, parent, cwd, direction)
     if agent_type.lower() in {"claude", "codex"}:
         # The certified PowerShell remains the control endpoint while the
         # interactive agent runs inside its console.  Agent input intentionally

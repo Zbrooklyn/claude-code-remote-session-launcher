@@ -70,6 +70,7 @@ public static class ResizeNative {
 }
 '@
 $target=$env:ORCH_UIA_RUNTIME; $direction=$env:ORCH_RESIZE_DIRECTION
+$count=[int]$env:ORCH_RESIZE_COUNT
 $keys=@{up=0x26;down=0x28;left=0x25;right=0x27}
 if(-not $keys.ContainsKey($direction)){throw 'INVALID_RESIZE_DIRECTION'}
 $previous=[ResizeNative]::GetForegroundWindow()
@@ -77,12 +78,14 @@ $nodes=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([Syste
 foreach($node in $nodes){
  if((($node.GetRuntimeId()) -join '.') -ne $target){continue}
  $node.SetFocus(); Start-Sleep -Milliseconds 75
+ for($i=0;$i -lt $count;$i++){
  [ResizeNative]::keybd_event(0x12,0,0,[UIntPtr]::Zero)
  [ResizeNative]::keybd_event(0x10,0,0,[UIntPtr]::Zero)
  [ResizeNative]::keybd_event($keys[$direction],0,0,[UIntPtr]::Zero)
  [ResizeNative]::keybd_event($keys[$direction],0,2,[UIntPtr]::Zero)
  [ResizeNative]::keybd_event(0x10,0,2,[UIntPtr]::Zero)
  [ResizeNative]::keybd_event(0x12,0,2,[UIntPtr]::Zero)
+ }
  if($previous -ne [IntPtr]::Zero){[ResizeNative]::SetForegroundWindow($previous)|Out-Null}
  'OK';exit 0
 }
@@ -136,12 +139,11 @@ def resize_exact_pane(topology: dict, direction: str, amount: int = 1) -> None:
     if direction not in {"up", "down", "left", "right"} or amount < 1:
         raise TerminalControlError("INVALID_RESIZE_ARGUMENT")
     env = {**os.environ, "ORCH_UIA_RUNTIME": topology["pane"]["runtime_id"],
-           "ORCH_RESIZE_DIRECTION": direction}
-    for _ in range(amount):
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _RESIZE_SCRIPT],
-                                env=env, capture_output=True, text=True, timeout=20, check=False)
-        if result.returncode or "OK" not in result.stdout:
-            raise TerminalControlError(result.stderr.strip() or "RESIZE_ACTION_FAILED")
+           "ORCH_RESIZE_DIRECTION": direction, "ORCH_RESIZE_COUNT": str(amount)}
+    result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _RESIZE_SCRIPT],
+                            env=env, capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode or "OK" not in result.stdout:
+        raise TerminalControlError(result.stderr.strip() or "RESIZE_ACTION_FAILED")
 
 
 def read_scrollback(topology: dict) -> str:
