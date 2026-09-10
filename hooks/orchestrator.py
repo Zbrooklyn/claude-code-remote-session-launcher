@@ -22,6 +22,7 @@ from worker_runtime import (
     refresh_worker_topology,
     restart_worker,
     send_worker,
+    send_worker_input,
     spawn_worker,
     terminate_worker,
 )
@@ -59,18 +60,24 @@ class Orchestrator:
         self.refresh(worker_id)
         self.store.assign(task_id, worker_id)
         op_id = _op_id()
-        marker = f"ORCH_RESULT_{op_id}"
-        # This is input to the shell, not a wt commandline.  The marker after
-        # the instruction proves execution rather than merely input queuing.
+        agent_type = self.store.worker(worker_id)["agent_type"].lower()
+        marker = f"ORCH_RESULT_{op_id}" if agent_type == "powershell" else None
         try:
-            result = send_worker(self.store, worker_id, f"{command}; Write-Output '{marker}'", marker)
+            if agent_type == "powershell":
+                # This is input to the shell, not a wt commandline. The marker
+                # after the instruction proves execution rather than queuing.
+                result = send_worker(self.store, worker_id, f"{command}; Write-Output '{marker}'", marker)
+            else:
+                result = send_worker_input(self.store, worker_id, command)
         except Exception as exc:
             self.store.set_task_state(task_id, "blocked", {"operation": op_id, "error": str(exc)})
             raise OrchestrationError(f"DELIVERY_FAILED: {exc}") from exc
-        if result["phase"] != "COMMAND_EXECUTED":
+        expected_phase = "COMMAND_EXECUTED" if marker else "INPUT_OBSERVED"
+        if result["phase"] != expected_phase:
             self.store.set_task_state(task_id, "blocked", {"operation": op_id, "phase": result["phase"]})
             raise OrchestrationError(f"DELIVERY_UNVERIFIED: {result['phase']}")
-        self.store._audit("operation_executed", worker_id, task_id, operation_id=op_id, marker=marker)
+        self.store._audit("operation_executed" if marker else "agent_input_observed",
+                          worker_id, task_id, operation_id=op_id, marker=marker)
         self.store.conn.commit()
         return {"operation_id": op_id, "marker": marker, "delivery": result}
 

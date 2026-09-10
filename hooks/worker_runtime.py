@@ -78,7 +78,14 @@ def spawn_worker(store: Store, name: str, role: str, engine: str = "powershell.e
     parent = store.worker(parent_worker_id) if parent_worker_id else None
     if parent and not parent.get("topology_json"):
         raise WorkerRuntimeError("PARENT_TOPOLOGY_UNBOUND")
-    return _launch_worker(store, worker, engine, parent)
+    launched = _launch_worker(store, worker, engine, parent)
+    if agent_type.lower() in {"claude", "codex"}:
+        # The certified PowerShell remains the control endpoint while the
+        # interactive agent runs inside its console.  Agent input intentionally
+        # has no shell marker: completion must come from an explicit predicate.
+        send_worker_input(store, launched["id"], agent_type.lower())
+        return store.worker(launched["id"])
+    return launched
 
 
 def refresh_worker_topology(store: Store, worker_id: str) -> dict:
@@ -123,6 +130,20 @@ def send_worker(store: Store, worker_id: str, command: str, marker: str | None =
         raise WorkerRuntimeError(f"Worker {worker_id} has no live AgentRef.")
     result = send_console(str(ref["pid"]), command, True, marker, 5.0, ref["process_start_time"])
     store.update_worker(worker_id, state="working", health={"reachable": True, "last_phase": result["phase"]})
+    return result
+
+
+def send_worker_input(store: Store, worker_id: str, message: str) -> dict:
+    """Send raw interactive agent input; never claim command/task completion."""
+    worker = store.worker(worker_id)
+    if worker["state"] in {"failed", "done", "disconnected"}:
+        raise WorkerRuntimeError(f"Worker {worker_id} is not writable in state {worker['state']}.")
+    ref = worker["ref_json"]
+    if not ref:
+        raise WorkerRuntimeError(f"Worker {worker_id} has no live AgentRef.")
+    result = send_console(str(ref["pid"]), message, True, None, 5.0, ref["process_start_time"])
+    store.update_worker(worker_id, state="working",
+                        health={"reachable": True, "last_phase": result["phase"], "delivery": "input"})
     return result
 
 

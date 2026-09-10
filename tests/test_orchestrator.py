@@ -54,3 +54,21 @@ def test_failed_delivery_marks_task_blocked(tmp_path: Path, monkeypatch):
     with pytest.raises(orchestrator.OrchestrationError, match="DELIVERY_FAILED"):
         control.dispatch(worker["id"], task["id"], "Write-Output nope")
     assert store.task(task["id"])["state"] == "blocked"
+
+
+def test_agent_prompt_delivery_is_not_misreported_as_shell_execution(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path / "orchestration.db")
+    control = orchestrator.Orchestrator(store)
+    worker = store.create_worker("claude", "worker", "claude")
+    worker = store.update_worker(worker["id"], state="ready", ref={"pid": 1}, topology={"certificate": "test"})
+    task = control.create_task("agent task")
+    monkeypatch.setattr(orchestrator, "refresh_worker_topology", lambda *_: store.worker(worker["id"]))
+    observed = {}
+    def fake_input(_store, worker_id, message):
+        observed.update(worker_id=worker_id, message=message)
+        return {"phase": "INPUT_OBSERVED"}
+    monkeypatch.setattr(orchestrator, "send_worker_input", fake_input)
+    result = control.dispatch(worker["id"], task["id"], "review the change")
+    assert result["marker"] is None
+    assert result["delivery"]["phase"] == "INPUT_OBSERVED"
+    assert observed == {"worker_id": worker["id"], "message": "review the change"}
