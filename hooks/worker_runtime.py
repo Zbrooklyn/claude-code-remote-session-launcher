@@ -42,14 +42,15 @@ def _topology_for_binding(certificate: str, ref: dict, screen: str, window_name:
     return {"window": window, "tab": tab, "pane": pane, "certificate": certificate, "window_name": window_name}
 
 
-def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None = None) -> dict:
+def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None = None,
+                   cwd: str | None = None) -> dict:
     certificate = f"ORCH_{worker['id'][-12:]}_{secrets.token_hex(12)}"
     # Windows Terminal owns the pane title through --title. Do not put a
     # semicolon in this command: wt interprets it as a commandline separator.
     command = f"Write-Output '{certificate}'"
     window_name = f"orch-{worker['id']}" if parent is None else parent["topology_json"]["window_name"]
     if parent is None:
-        subprocess.run(["wt.exe", "-w", window_name, "new-tab", "-d", str(Path.cwd()), "--title", certificate, engine, "-NoExit", "-Command", command],
+        subprocess.run(["wt.exe", "-w", window_name, "new-tab", "-d", cwd or str(Path.cwd()), "--title", certificate, engine, "-NoExit", "-Command", command],
                        check=False, timeout=15)
     else:
         split_relative(parent["topology_json"], engine, certificate, command)
@@ -74,12 +75,13 @@ def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None 
 
 
 def spawn_worker(store: Store, name: str, role: str, engine: str = "powershell.exe",
-                 parent_worker_id: str | None = None, agent_type: str = "powershell") -> dict:
+                 parent_worker_id: str | None = None, agent_type: str = "powershell",
+                 cwd: str | None = None) -> dict:
     worker = store.create_worker(name, role, agent_type)
     parent = store.worker(parent_worker_id) if parent_worker_id else None
     if parent and not parent.get("topology_json"):
         raise WorkerRuntimeError("PARENT_TOPOLOGY_UNBOUND")
-    launched = _launch_worker(store, worker, engine, parent)
+    launched = _launch_worker(store, worker, engine, parent, cwd)
     if agent_type.lower() in {"claude", "codex"}:
         # The certified PowerShell remains the control endpoint while the
         # interactive agent runs inside its console.  Agent input intentionally

@@ -41,8 +41,9 @@ class Orchestrator:
         self.store = store or Store()
 
     def spawn(self, name: str, role: str, engine: str = "powershell.exe",
-              parent: str | None = None, agent_type: str = "powershell") -> dict:
-        return spawn_worker(self.store, name, role, engine, parent, agent_type)
+              parent: str | None = None, agent_type: str = "powershell",
+              cwd: str | None = None) -> dict:
+        return spawn_worker(self.store, name, role, engine, parent, agent_type, cwd)
 
     def refresh(self, worker_id: str) -> dict:
         return refresh_worker_topology(self.store, worker_id)
@@ -179,7 +180,7 @@ def _json(value: object) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-orchestrator")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("spawn"); p.add_argument("name"); p.add_argument("role"); p.add_argument("--engine", default="powershell.exe"); p.add_argument("--parent"); p.add_argument("--agent-type", default="powershell")
+    p = sub.add_parser("spawn"); p.add_argument("name"); p.add_argument("role"); p.add_argument("--engine", default="powershell.exe"); p.add_argument("--parent"); p.add_argument("--agent-type", default="powershell"); p.add_argument("--cwd")
     p = sub.add_parser("task-create"); p.add_argument("title"); p.add_argument("--parent")
     p = sub.add_parser("depends"); p.add_argument("task"); p.add_argument("dependency")
     p = sub.add_parser("dispatch"); p.add_argument("worker"); p.add_argument("task"); p.add_argument("instruction")
@@ -193,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     control = Orchestrator()
     try:
-        if args.command == "spawn": out = control.spawn(args.name, args.role, args.engine, args.parent, args.agent_type)
+        if args.command == "spawn": out = control.spawn(args.name, args.role, args.engine, args.parent, args.agent_type, args.cwd)
         elif args.command == "task-create": out = control.create_task(args.title, args.parent)
         elif args.command == "depends": control.add_dependency(args.task, args.dependency); out = {"ok": True}
         elif args.command == "dispatch": out = control.dispatch(args.worker, args.task, args.instruction)
