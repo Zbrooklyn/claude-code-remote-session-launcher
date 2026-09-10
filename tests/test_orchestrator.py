@@ -72,3 +72,14 @@ def test_agent_prompt_delivery_is_not_misreported_as_shell_execution(tmp_path: P
     assert result["marker"] is None
     assert result["delivery"]["phase"] == "INPUT_OBSERVED"
     assert observed == {"worker_id": worker["id"], "message": "review the change"}
+
+
+def test_role_lookup_rejects_ambiguous_workers(tmp_path: Path):
+    store = Store(tmp_path / "orchestration.db")
+    control = orchestrator.Orchestrator(store)
+    _ready_worker(store, "frontend-one")
+    _ready_worker(store, "frontend-two")
+    store.conn.execute("update workers set role='frontend'")
+    store.conn.commit()
+    with pytest.raises(orchestrator.OrchestrationError, match="ROLE_NOT_UNIQUE"):
+        control.worker_by_role("frontend")
