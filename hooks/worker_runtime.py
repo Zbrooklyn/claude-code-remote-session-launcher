@@ -6,6 +6,7 @@ import json
 import secrets
 import subprocess
 import time
+from pathlib import Path
 
 from agent_identity import reference_for_pid
 from agentctl import read as read_console, send as send_console
@@ -48,7 +49,7 @@ def _launch_worker(store: Store, worker: dict, engine: str, parent: dict | None 
     command = f"Write-Output '{certificate}'"
     window_name = f"orch-{worker['id']}" if parent is None else parent["topology_json"]["window_name"]
     if parent is None:
-        subprocess.run(["wt.exe", "-w", window_name, "new-tab", "--title", certificate, engine, "-NoExit", "-Command", command],
+        subprocess.run(["wt.exe", "-w", window_name, "new-tab", "-d", str(Path.cwd()), "--title", certificate, engine, "-NoExit", "-Command", command],
                        check=False, timeout=15)
     else:
         split_relative(parent["topology_json"], engine, certificate, command)
