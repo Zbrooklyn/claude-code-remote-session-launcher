@@ -14,7 +14,7 @@ TERMINAL_STATES = {"done", "failed"}
 ALLOWED = {
     "starting": {"ready", "failed", "disconnected"},
     "ready": {"working", "waiting", "failed", "disconnected"},
-    "working": {"waiting", "blocked", "reviewing", "done", "failed", "disconnected"},
+    "working": {"ready", "waiting", "blocked", "reviewing", "done", "failed", "disconnected"},
     "waiting": {"working", "blocked", "done", "failed", "disconnected"},
     "blocked": {"working", "failed", "disconnected"},
     "reviewing": {"working", "done", "failed", "blocked"},
