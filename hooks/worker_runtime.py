@@ -37,7 +37,8 @@ def spawn_worker(store: Store, name: str, role: str, engine: str = "powershell.e
     # Windows Terminal owns the pane title through --title. Do not put a
     # semicolon in this command: wt interprets it as a commandline separator.
     command = f"Write-Output '{certificate}'"
-    subprocess.run(["wt.exe", "-w", "new", "new-tab", "--title", certificate, engine, "-NoExit", "-Command", command],
+    window_name = f"orch-{worker['id']}"
+    subprocess.run(["wt.exe", "-w", window_name, "new-tab", "--title", certificate, engine, "-NoExit", "-Command", command],
                    check=False, timeout=15)
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -54,7 +55,7 @@ def spawn_worker(store: Store, name: str, role: str, engine: str = "powershell.e
             tab = next(tab for tab in topology["tabs"] if tab["bridge_id"] == pane["tab_id"])
             window = next(win for win in topology["windows"] if win["bridge_id"] == tab["window_id"])
             return store.update_worker(worker["id"], state="ready", ref=ref,
-                                       topology={"window": window, "tab": tab, "pane": pane, "certificate": certificate},
+                                       topology={"window": window, "tab": tab, "pane": pane, "certificate": certificate, "window_name": window_name},
                                        health={"reachable": True, "bound_at": time.time()})
         time.sleep(0.1)
     store.update_worker(worker["id"], state="failed", health={"reachable": False, "reason": "topology binding timeout"})
