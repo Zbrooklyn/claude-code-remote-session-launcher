@@ -54,6 +54,7 @@ public static class TopologyNative { [DllImport("user32.dll")] public static ext
 '@
 $terminalPids=@(Get-Process WindowsTerminal -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 $includeInactive=__EXHAUSTIVE__
+$allowedHandles=@(__ALLOWED_HANDLES__)
 $root=[System.Windows.Automation.AutomationElement]::RootElement
 $foreground=[TopologyNative]::GetForegroundWindow().ToInt64()
 $windows=@()
@@ -61,6 +62,7 @@ foreach($win in $root.FindAll([System.Windows.Automation.TreeScope]::Children,[S
   if($win.Current.ProcessId -notin $terminalPids){continue}
   if($win.Current.ControlType -ne [System.Windows.Automation.ControlType]::Window){continue}
   $handle=[int64]$win.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty)
+  if($allowedHandles.Count -gt 0 -and $handle -notin $allowedHandles){continue}
   $tabs=$win.FindAll([System.Windows.Automation.TreeScope]::Descendants,(New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TabItem)))
   $activeRuntime=$null
   foreach($candidate in $tabs){try{$candidatePattern=$candidate.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern);if($candidatePattern.Current.IsSelected){$activeRuntime=(($candidate.GetRuntimeId()) -join '.');break}}catch{}}
@@ -87,12 +89,17 @@ def _stable(prefix: str, *parts: object) -> str:
     return f"{prefix}_{hashlib.sha256(raw).hexdigest()[:20]}"
 
 
-def _uia_snapshot(exhaustive: bool = False) -> dict:
+def _uia_snapshot(exhaustive: bool = False, hwnds: list[int] | None = None) -> dict:
     if sys.platform != "win32":
         raise TopologyError("Windows Terminal topology is available only on Windows.")
     try:
+        handles = ",".join(str(int(hwnd)) for hwnd in (hwnds or []))
+        script = (
+            _UIA_SCRIPT.replace("__EXHAUSTIVE__", "$true" if exhaustive else "$false")
+            .replace("__ALLOWED_HANDLES__", handles)
+        )
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _UIA_SCRIPT.replace("__EXHAUSTIVE__", "$true" if exhaustive else "$false")],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True, text=True, timeout=30, check=False,
         )
         if result.returncode:
@@ -102,10 +109,21 @@ def _uia_snapshot(exhaustive: bool = False) -> dict:
         raise TopologyError(f"Could not enumerate Windows Terminal topology: {exc}") from exc
 
 
-def enumerate_topology(certificates: dict[str, str] | None = None, exhaustive: bool = False) -> dict:
-    """Return bridge IDs. Certificates are pane runtime IDs mapped to tokens."""
+def enumerate_topology(
+    certificates: dict[str, str] | None = None,
+    exhaustive: bool = False,
+    hwnds: list[int] | None = None,
+) -> dict:
+    """Return bridge IDs, optionally scoped to bridge-owned window handles.
+
+    Inactive-tab traversal selects tabs briefly.  It is therefore allowed only
+    when callers pass HWNDs for windows they own; a global exhaustive scan is
+    refused rather than changing an unrelated user's selected tab.
+    """
     certificates = certificates or {}
-    snapshot = _uia_snapshot(exhaustive)
+    if exhaustive and not hwnds:
+        raise TopologyError("EXHAUSTIVE_SCAN_REQUIRES_OWNED_HWND")
+    snapshot = _uia_snapshot(exhaustive, hwnds)
     windows: list[WindowNode] = []
     tabs: list[TabNode] = []
     panes: list[PaneNode] = []
