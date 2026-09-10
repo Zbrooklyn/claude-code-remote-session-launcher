@@ -15,7 +15,7 @@ ALLOWED = {
     "starting": {"ready", "failed", "disconnected"},
     "ready": {"working", "waiting", "failed", "disconnected"},
     "working": {"ready", "waiting", "blocked", "reviewing", "done", "failed", "disconnected"},
-    "waiting": {"working", "blocked", "done", "failed", "disconnected"},
+    "waiting": {"ready", "working", "blocked", "done", "failed", "disconnected"},
     "blocked": {"working", "failed", "disconnected"},
     "reviewing": {"working", "done", "failed", "blocked"},
     "done": set(), "failed": {"recovering"}, "disconnected": {"recovering", "failed"},
@@ -87,7 +87,7 @@ class Store:
     def update_worker(self, worker_id: str, *, state: str | None = None, ref: dict | None = None,
                       topology: dict | None = None, task_id: str | None = None, health: dict | None = None) -> dict:
         current = self.worker(worker_id)
-        if state and (state not in STATES or state not in ALLOWED[current["state"]]):
+        if state and state != current["state"] and (state not in STATES or state not in ALLOWED[current["state"]]):
             raise ValueError(f"invalid worker transition {current['state']} -> {state}")
         values = {
             "state": state or current["state"],
@@ -118,14 +118,34 @@ class Store:
             raise KeyError(task_id)
         return self._decode(dict(row), ("completion_json", "verification_json", "result_json"))
 
+    def tasks(self) -> list[dict]:
+        return [self._decode(dict(row), ("completion_json", "verification_json", "result_json"))
+                for row in self.conn.execute("select * from tasks order by created_at")]
+
+    def dependencies(self, task_id: str) -> list[str]:
+        self.task(task_id)
+        return [row[0] for row in self.conn.execute(
+            "select depends_on from dependencies where task_id=? order by depends_on", (task_id,))]
+
     def assign(self, task_id: str, worker_id: str) -> dict:
         self.worker(worker_id)
         self.task(task_id)
+        if not self.ready_for_work(task_id):
+            raise ValueError("task dependencies are not complete")
         self.conn.execute("update tasks set owner_id=?,state='working',updated_at=? where id=?", (worker_id, time.time(), task_id))
         self.update_worker(worker_id, state="working", task_id=task_id)
         self._audit("task_assigned", worker_id, task_id)
         self.conn.commit()
         return self.task(task_id)
+
+    def reassign(self, task_id: str, worker_id: str) -> dict:
+        prior = self.task(task_id).get("owner_id")
+        if prior and prior != worker_id:
+            old = self.worker(prior)
+            if old["state"] not in TERMINAL_STATES:
+                self.update_worker(prior, state="ready", task_id="")
+        self._audit("task_reassigned", worker_id, task_id, previous_owner=prior)
+        return self.assign(task_id, worker_id)
 
     def add_dependency(self, task_id: str, depends_on: str) -> None:
         if task_id == depends_on:
@@ -149,6 +169,24 @@ class Store:
             if worker["state"] not in TERMINAL_STATES:
                 self.update_worker(worker["id"], state="ready", task_id="")
         self._audit("task_completed" if verified else "task_review_required", task_id=task_id, result=result)
+        self.conn.commit()
+        return self.task(task_id)
+
+    def record_retry(self, worker_id: str, reason: str) -> dict:
+        worker = self.worker(worker_id)
+        retries = worker["retries"] + 1
+        self.conn.execute("update workers set retries=?,updated_at=?,last_activity=? where id=?",
+                          (retries, time.time(), time.time(), worker_id))
+        self._audit("worker_retry", worker_id, reason=reason, retries=retries)
+        self.conn.commit()
+        return self.worker(worker_id)
+
+    def set_task_state(self, task_id: str, state: str, detail: dict | None = None) -> dict:
+        if state not in {"ready", "working", "blocked", "reviewing", "done", "failed"}:
+            raise ValueError(f"invalid task state {state}")
+        self.task(task_id)
+        self.conn.execute("update tasks set state=?,updated_at=? where id=?", (state, time.time(), task_id))
+        self._audit("task_state", task_id=task_id, state=state, detail=detail or {})
         self.conn.commit()
         return self.task(task_id)
 

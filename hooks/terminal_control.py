@@ -39,6 +39,24 @@ foreach($node in $nodes){
 throw 'STALE_TAB_OR_CLOSE_BUTTON'
 '''
 
+_SCROLLBACK_SCRIPT = r'''
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$target=$env:ORCH_UIA_RUNTIME
+$nodes=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+foreach($node in $nodes){
+  if((($node.GetRuntimeId()) -join '.') -ne $target){continue}
+  try {
+    $pattern=$node.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+    [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+    [Console]::Write($pattern.DocumentRange.GetText(-1))
+    exit 0
+  } catch { throw 'TEXT_PATTERN_NOT_EXPOSED' }
+}
+throw 'STALE_UIA_ELEMENT'
+'''
+
 
 def _focus(runtime_id: str, kind: str) -> None:
     env = {**os.environ, "ORCH_UIA_RUNTIME": runtime_id, "ORCH_UIA_KIND": kind}
@@ -88,4 +106,14 @@ def resize_exact_pane(topology: dict, direction: str, amount: int = 1) -> None:
 
 
 def read_scrollback(topology: dict) -> str:
-    raise TerminalControlError("NOT_EXPOSED: attributed UIA TextPattern scrollback is unavailable on this Windows Terminal build.")
+    """Read the TextPattern belonging to this already-certified pane.
+
+    RuntimeId is re-resolved by the worker bridge before this call.  The
+    certificate/PID binding is the attribution proof; TextPattern alone is not.
+    """
+    env = {**os.environ, "ORCH_UIA_RUNTIME": topology["pane"]["runtime_id"]}
+    result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _SCROLLBACK_SCRIPT],
+                            env=env, capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode:
+        raise TerminalControlError(result.stderr.strip() or "TEXT_PATTERN_NOT_EXPOSED")
+    return result.stdout
