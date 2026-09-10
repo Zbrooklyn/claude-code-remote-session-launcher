@@ -1,7 +1,7 @@
 """Tests for window_sessions: catalog, fuzzy match, and process-verified liveness.
 
 All filesystem state lives in the isolated $CLAUDE_HOME (claude_home fixture).
-Liveness is monkeypatched at running_claude_pids so we never touch the real
+Liveness is monkeypatched at running_claude_procs so we never touch the real
 process table.
 """
 import time
@@ -83,7 +83,7 @@ def test_is_ambiguous():
 def test_alive_only_when_process_running(claude_home, monkeypatch):
     write_session(claude_home, 4242, "live-sid")
     write_session(claude_home, 9999, "dead-sid")
-    monkeypatch.setattr(ws, "running_claude_pids", lambda: {4242})
+    monkeypatch.setattr(ws, "running_claude_procs", lambda: {4242: ""})
     alive = ws.alive_session_ids()
     assert "live-sid" in alive
     assert "dead-sid" not in alive
@@ -92,7 +92,7 @@ def test_alive_only_when_process_running(claude_home, monkeypatch):
 def test_alive_pid_for_session(claude_home, monkeypatch):
     write_session(claude_home, 4242, "live-sid")
     write_session(claude_home, 9999, "dead-sid")
-    monkeypatch.setattr(ws, "running_claude_pids", lambda: {4242})
+    monkeypatch.setattr(ws, "running_claude_procs", lambda: {4242: ""})
     assert ws.alive_pid_for_session("live-sid") == 4242
     assert ws.alive_pid_for_session("dead-sid") is None
     assert ws.alive_pid_for_session("unknown-sid") is None

@@ -4,7 +4,9 @@ Claude Code Remote Session Launcher lets an active Claude Code workflow start ad
 
 The first goal is simple: ask Claude Code to open a new Claude Code session in a remote-ready state so it can be accessed through Claude Code remote control. It supports configurable workspace paths, launch profiles, and autonomy presets without requiring the user to manually rebuild the command each time.
 
-This project does not orchestrate or control child sessions yet. It is the launch layer for future multi-session Claude Code workflows.
+This project includes a small Windows-native control layer for existing
+PowerShell/Claude sessions. It remains the launcher and session-management
+layer; it does not replace Windows Terminal or implement a terminal multiplexer.
 
 ---
 
@@ -41,7 +43,7 @@ $env:CLAUDE_BINARY = "C:\full\path\to\claude.exe"   # add to your PowerShell pro
 
 Likewise, `CLAUDE_HOME` overrides the config directory if yours isn't `~/.claude`.
 
-## What you get — 19 slash commands
+## What you get — 22 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -82,6 +84,12 @@ Likewise, `CLAUDE_HOME` overrides the config directory if yours isn't `~/.claude
 `/window-context <session-name-or-alias>` — show recent user/assistant turns from a spawned session's transcript without having to navigate to its terminal tab. `--turns N` (default 3) controls how many turns to print; `--full` disables the per-turn truncation. Works on dead sessions too, as long as the original transcript file still exists at `~/.claude/projects/<sanitized-cwd>/<sessionId>.jsonl`. Closes the orchestration loop with /window-wait: wait for the worker, then read what it produced.
 
 `/window-fanout <N> "<prompt>"` — spawn N worker sessions all running the same first prompt, all auto-tagged together so the whole batch can be waited on, read, and killed as one. Defaults to `--mode window-yolo-remote` (autonomous + remote-controllable). Optional `--tag <name>` overrides the auto-generated batch tag; `--name-prefix <prefix>` controls the per-worker name (default `fanout`, so workers are named `fanout-1`, `fanout-2`, etc.). Capped at N=20 per call. After spawning, prints the exact /window-wait, /window-context, and /window-kill commands for the group.
+
+`/window-send <pid-or-session-name> "message"` — inject text into a validated existing PowerShell/Claude console without bringing its Terminal tab forward. It reports delivery state; use `agentctl send --verify` for shell-command read-back verification.
+
+`/window-screen <pid-or-session-name>` — read the target console's current visible screen buffer by PID, without UI focus.
+
+`/window-interrupt <pid-or-session-name>` — deliver Ctrl+C only if the target console has no unrelated process member. It refuses unsafe console-wide events.
 
 ## Orchestration loop
 

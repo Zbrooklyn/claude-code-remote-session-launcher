@@ -24,30 +24,33 @@ def _load_spawn():
 sw = _load_spawn()
 
 
-# ---------- parse_args (5-tuple: workspace, prompt, worktree, name, resume_id) ----------
+# ---------- parse_args (6-tuple: workspace, prompt, worktree, name, resume_id, group) ----------
 
 def test_parse_args_empty():
-    assert sw.parse_args("") == (None, None, False, None, None)
+    assert sw.parse_args("") == (None, None, False, None, None, None)
 
 
 def test_parse_args_resume_and_name():
-    workspace, prompt, worktree, name, resume_id = sw.parse_args("--name foo --resume SID123")
+    workspace, prompt, worktree, name, resume_id, group = sw.parse_args("--name foo --resume SID123")
     assert name == "foo"
     assert resume_id == "SID123"
+    assert group is None
 
 
 def test_parse_args_worktree_flag():
-    workspace, prompt, worktree, name, resume_id = sw.parse_args("--worktree")
+    workspace, prompt, worktree, name, resume_id, group = sw.parse_args("--worktree")
     assert worktree is True
+    assert group is None
 
 
 def test_parse_args_path_with_spaces(tmp_path):
     d = tmp_path / "a b"
     d.mkdir()
     fwd = str(d).replace("\\", "/")  # forward slashes: shlex-safe on Windows
-    workspace, prompt, worktree, name, resume_id = sw.parse_args(f'"{fwd}" "do it"')
+    workspace, prompt, worktree, name, resume_id, group = sw.parse_args(f'"{fwd}" "do it"')
     assert Path(workspace) == d
     assert prompt == "do it"
+    assert group is None
 
 
 # ---------- build_claude_args ----------
