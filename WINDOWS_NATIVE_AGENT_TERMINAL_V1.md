@@ -15,13 +15,18 @@ py hooks/agentctl.py key <target> enter --json
 py hooks/agentctl.py interrupt <target> --json
 ```
 
-`send --verify` requires the marker twice in the screen buffer: PowerShell's echoed command and its output. A successful Win32 write alone is only `INPUT_QUEUED`, not command completion. `interrupt` refuses when console membership includes a process other than the target and short-lived controller.
+`send --verify` requires this operation to add the marker twice to the screen buffer: PowerShell's echoed command and its output. A successful Win32 write alone is only `INPUT_QUEUED`, not command completion. `interrupt` refuses when console membership includes a process other than the target and short-lived controller.
 
 ## Launcher integration and boundary
 
 `/window-send`, `/window-screen`, and `/window-interrupt` wrap the shared CLI. Existing session discovery, aliases, tags, status, wait, transcript context, fan-out, resume, and kill hooks are reused. `agentctl wait` uses `claude agents --json` for existing remote-control Claude sessions.
 
 V1 does not manage Windows Terminal tabs or panes. Windows Terminal exposes no stable external PID or `WT_SESSION` to pane identity; that bridge is V2. There is no daemon, terminal replacement, or tmux compatibility layer.
+
+Claude invoking this shared CLI is a deferred compatibility validation. The
+native helper and Codex path are verified; Claude parity is currently
+**UNVERIFIED** because the installed Claude CLI reached its usage limit before
+the disposable parity command could run.
 
 ## Baseline repair record
 

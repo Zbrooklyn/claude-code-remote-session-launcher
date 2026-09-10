@@ -43,6 +43,7 @@ def send(value: str, text: str, enter: bool, verify: str | None, timeout: float,
     ref = _validated(value, expected_start_time)
     with attached_console(ref.pid) as handles:
         before = read_screen(handles)
+        prior_marker_count = before.count(verify) if verify else 0
         queued = write_text(handles, text)
         if enter:
             queued += write_key(handles, "enter")
@@ -53,7 +54,7 @@ def send(value: str, text: str, enter: bool, verify: str | None, timeout: float,
             # A command marker appears once while PowerShell echoes the typed
             # command and a second time only after Write-Output executes it.
             # Do not call input echo command completion.
-            observed = (screen.count(verify) >= 2) if verify else (screen != before or text in screen)
+            observed = (screen.count(verify) >= prior_marker_count + 2) if verify else (screen != before or text in screen)
             if observed:
                 break
             time.sleep(0.05)
