@@ -57,6 +57,38 @@ foreach($node in $nodes){
 throw 'STALE_UIA_ELEMENT'
 '''
 
+_RESIZE_SCRIPT = r'''
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class ResizeNative {
+ [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern void keybd_event(byte v,byte s,uint f,UIntPtr e);
+}
+'@
+$target=$env:ORCH_UIA_RUNTIME; $direction=$env:ORCH_RESIZE_DIRECTION
+$keys=@{up=0x26;down=0x28;left=0x25;right=0x27}
+if(-not $keys.ContainsKey($direction)){throw 'INVALID_RESIZE_DIRECTION'}
+$previous=[ResizeNative]::GetForegroundWindow()
+$nodes=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+foreach($node in $nodes){
+ if((($node.GetRuntimeId()) -join '.') -ne $target){continue}
+ $node.SetFocus(); Start-Sleep -Milliseconds 75
+ [ResizeNative]::keybd_event(0x12,0,0,[UIntPtr]::Zero)
+ [ResizeNative]::keybd_event(0x10,0,0,[UIntPtr]::Zero)
+ [ResizeNative]::keybd_event($keys[$direction],0,0,[UIntPtr]::Zero)
+ [ResizeNative]::keybd_event($keys[$direction],0,2,[UIntPtr]::Zero)
+ [ResizeNative]::keybd_event(0x10,0,2,[UIntPtr]::Zero)
+ [ResizeNative]::keybd_event(0x12,0,2,[UIntPtr]::Zero)
+ if($previous -ne [IntPtr]::Zero){[ResizeNative]::SetForegroundWindow($previous)|Out-Null}
+ 'OK';exit 0
+}
+throw 'STALE_UIA_ELEMENT'
+'''
+
 
 def _focus(runtime_id: str, kind: str) -> None:
     env = {**os.environ, "ORCH_UIA_RUNTIME": runtime_id, "ORCH_UIA_KIND": kind}
@@ -101,8 +133,15 @@ def close_exact_tab(topology: dict) -> None:
 
 
 def resize_exact_pane(topology: dict, direction: str, amount: int = 1) -> None:
-    focus_worker(topology)
-    _wt(topology["window_name"], "action", "resizePane", "--direction", direction, "--size", str(amount))
+    if direction not in {"up", "down", "left", "right"} or amount < 1:
+        raise TerminalControlError("INVALID_RESIZE_ARGUMENT")
+    env = {**os.environ, "ORCH_UIA_RUNTIME": topology["pane"]["runtime_id"],
+           "ORCH_RESIZE_DIRECTION": direction}
+    for _ in range(amount):
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _RESIZE_SCRIPT],
+                                env=env, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode or "OK" not in result.stdout:
+            raise TerminalControlError(result.stderr.strip() or "RESIZE_ACTION_FAILED")
 
 
 def read_scrollback(topology: dict) -> str:
