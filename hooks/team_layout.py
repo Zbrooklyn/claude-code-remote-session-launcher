@@ -32,7 +32,7 @@ def normalize_main_and_workers(store, main_id: str, worker_ids: list[str], toler
     # use a worker sharing MAIN's first horizontal splitter
     main_result=converge_pair(main["topology_json"],workers[0]["topology_json"],"height",.5,tolerance)
     # Equalize panes by repeatedly compare every worker to the first in its row.
-    for _ in range(3):
+    for _ in range(8):
         workers=refresh_all(store,worker_ids)
         bounds=measured(main["topology_json"])
         rows={}
@@ -41,8 +41,9 @@ def normalize_main_and_workers(store, main_id: str, worker_ids: list[str], toler
             rows.setdefault(round(p[1]),[]).append(worker)
         for row in rows.values():
             row.sort(key=lambda x:bounds[x["topology_json"]["pane"]["runtime_id"]][0])
-            for right in row[1:]:
-                left=row[0]
+            # Neighbour relaxation converges an N-pane row toward equal widths
+            # without assuming a particular Windows Terminal split tree.
+            for left,right in zip(row,row[1:]):
                 converge_pair(left["topology_json"],right["topology_json"],"width",.5,tolerance)
     workers=refresh_all(store,worker_ids)
     return {"main":main_result,"bounds":measured(main["topology_json"]),"workers":workers}
