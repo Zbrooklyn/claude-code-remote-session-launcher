@@ -25,6 +25,9 @@ class TargetError(RuntimeError):
         super().__init__(message)
 
 
+_CONSOLE_IMAGES = {"powershell.exe", "pwsh.exe", "claude.exe"}
+
+
 @dataclass(frozen=True)
 class AgentRef:
     pid: int
@@ -129,7 +132,7 @@ def _ref_from_process(p: dict, enrich: bool = True) -> AgentRef:
 
 def list_power_shells() -> list[AgentRef]:
     return [_ref_from_process(p) for p in _powershell_processes()
-            if str(p.get("Name", "")).lower() in {"powershell.exe", "pwsh.exe"}]
+            if str(p.get("Name", "")).lower() in _CONSOLE_IMAGES]
 
 
 def reference_for_pid(pid: int) -> AgentRef:
@@ -137,8 +140,8 @@ def reference_for_pid(pid: int) -> AgentRef:
     if not rows:
         raise TargetError("NOT_FOUND", f"No process with PID {pid} exists.")
     p = rows[0]
-    if str(p.get("Name", "")).lower() not in {"powershell.exe", "pwsh.exe"}:
-        raise TargetError("NOT_A_POWERSHELL", f"PID {pid} is not powershell.exe or pwsh.exe.")
+    if str(p.get("Name", "")).lower() not in _CONSOLE_IMAGES:
+        raise TargetError("NOT_A_CONSOLE_TARGET", f"PID {pid} is not PowerShell or Claude Code.")
     ref = _ref_from_process(p)
     if not ref.process_start_time:
         raise TargetError("IDENTITY_UNAVAILABLE", f"Could not read a creation time for PID {pid}.")
@@ -156,7 +159,7 @@ def resolve_target(value: str) -> AgentRef:
     actual = resolve_to_actual(value, load_aliases())
     agent = by_remote_control_name().get(actual)
     if not agent or not agent.get("pid"):
-        raise TargetError("NOT_FOUND", f"No live PowerShell target named {value!r}.")
+        raise TargetError("NOT_FOUND", f"No live PowerShell or Claude target named {value!r}.")
     ref = reference_for_pid(int(agent["pid"]))
     return AgentRef(**{**ref.to_dict(), "claude_session_id": agent.get("sessionId"),
                        "remote_control_name": actual, "alias": value if actual != value else None,

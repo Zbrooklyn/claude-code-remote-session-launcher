@@ -4,7 +4,7 @@ V1 extends the existing launcher; it does not replace Windows Terminal or build 
 
 ## Addressing and safety
 
-An `AgentRef` contains PID, process creation time, executable image, parent, command line, and `WT_SESSION` when the target exposes it. Mutating operations revalidate PID + start time + executable immediately before attaching. A missing or reused target is reported as `STALE_TARGET`, never silently retargeted.
+An `AgentRef` contains PID, process creation time, executable image, parent, command line, and `WT_SESSION` when the target exposes it. It supports PowerShell and direct Claude executable console processes, so launcher remote-control names resolve to the actual live Claude console rather than assuming a shell parent. Mutating operations revalidate PID + start time + executable immediately before attaching. A missing or reused target is reported as `STALE_TARGET`, never silently retargeted.
 
 ```powershell
 py hooks/agentctl.py list --json

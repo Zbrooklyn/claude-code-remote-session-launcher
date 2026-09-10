@@ -27,3 +27,12 @@ def test_validate_preserves_enrichment(monkeypatch):
     monkeypatch.setattr(identity, "reference_for_pid", lambda _pid: ref())
     checked = identity.validate_target(identity.AgentRef(42, "start", ref().process_image, wt_session="saved"))
     assert checked.wt_session == "saved"
+
+
+def test_claude_process_is_an_allowed_console_target(monkeypatch):
+    monkeypatch.setattr(identity, "_powershell_processes", lambda _pid: [{
+        "ProcessId": 77, "ParentProcessId": 1, "Name": "claude.exe",
+        "ExecutablePath": "C:/claude.exe", "CreationDate": "started",
+    }])
+    monkeypatch.setattr(identity, "_remote_environment", lambda _pid: None)
+    assert identity.reference_for_pid(77).process_image == "C:/claude.exe"
