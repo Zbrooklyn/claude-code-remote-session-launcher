@@ -43,7 +43,7 @@ $env:CLAUDE_BINARY = "C:\full\path\to\claude.exe"   # add to your PowerShell pro
 
 Likewise, `CLAUDE_HOME` overrides the config directory if yours isn't `~/.claude`.
 
-## What you get — 22 slash commands
+## What you get — 24 slash commands
 
 `/window` — open a fresh Claude Code session in a new terminal window, standard permissions.
 
@@ -90,6 +90,15 @@ Likewise, `CLAUDE_HOME` overrides the config directory if yours isn't `~/.claude
 `/window-screen <pid-or-session-name>` — read the target console's current visible screen buffer by PID, without UI focus.
 
 `/window-interrupt <pid-or-session-name>` — deliver Ctrl+C only if the target console has no unrelated process member. It refuses unsafe console-wide events.
+
+## Native worker orchestration
+
+/agent-orchestrate is the durable bridge-owned worker/task controller. It
+persists logical workers, tasks, dependencies, verified deliveries, recovery,
+and audit records while reusing the native PID-safe console implementation.
+/agent-topology shows the persisted certified Terminal locations. See
+WINDOWS_AGENT_TERMINAL_ORCHESTRATION.md for the actual mapping and safety
+boundaries.
 
 ## Orchestration loop
 

@@ -179,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("handoff"); p.add_argument("source"); p.add_argument("destination"); p.add_argument("task"); p.add_argument("instruction")
     p = sub.add_parser("verify"); p.add_argument("task"); p.add_argument("text"); p.add_argument("--reviewer")
     p = sub.add_parser("monitor"); p.add_argument("worker")
+    p = sub.add_parser("wait"); p.add_argument("workers", nargs="+"); p.add_argument("--mode", choices=("all", "any"), default="all"); p.add_argument("--timeout", type=float, default=30); p.add_argument("--poll", type=float, default=.25)
     p = sub.add_parser("recover"); p.add_argument("worker"); p.add_argument("--engine", default="powershell.exe")
     p = sub.add_parser("close"); p.add_argument("worker")
     sub.add_parser("workers"); sub.add_parser("tasks"); sub.add_parser("audit")
@@ -192,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "handoff": out = control.handoff(args.source, args.destination, args.task, args.instruction)
         elif args.command == "verify": out = control.verify_task(args.task, args.text, args.reviewer)
         elif args.command == "monitor": out = control.monitor(args.worker)
+        elif args.command == "wait": out = control.wait(args.workers, args.mode, args.timeout, args.poll)
         elif args.command == "recover": out = control.recover(args.worker, args.engine)
         elif args.command == "close": control.close(args.worker); out = {"ok": True}
         elif args.command == "workers": out = control.store.workers()

@@ -1,6 +1,6 @@
 import pytest
 
-from terminal_topology import TopologyError, bind_certificate, resolve_pane
+from terminal_topology import TopologyError, bind_certificate, enumerate_topology, resolve_pane
 
 
 def test_certificate_binding_requires_two_channels():
@@ -18,3 +18,8 @@ def test_certificate_binding_rejects_ambiguous_title():
 def test_resolve_pane_rejects_stale_id():
     with pytest.raises(TopologyError, match="STALE_PANE"):
         resolve_pane({"panes": []}, "pane_missing")
+
+
+def test_global_inactive_scan_is_refused_before_uia():
+    with pytest.raises(TopologyError, match="OWNED_HWND"):
+        enumerate_topology(exhaustive=True)

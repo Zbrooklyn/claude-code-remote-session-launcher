@@ -13,11 +13,11 @@ Constraints:
 
 ## Checklist
 
-- [ ] Establish topology bridge in hooks/terminal_topology.py and live-prove exact pane-to-agent mapping.
-- [ ] Add exact safe Terminal controls in hooks/terminal_control.py only where stable topology supports them.
-- [ ] Add SQLite workers/tasks/dependencies/audit persistence in hooks/orchestration_store.py and hooks/orchestration_models.py.
-- [ ] Add orchestration controller and shared CLI in hooks/orchestrate.py and hooks/worker_runtime.py.
-- [ ] Reuse launcher aliases, live state, status, wait, context, fan-out, and spawn hooks rather than duplicate them.
-- [ ] Add unit tests for identity, topology, terminal control, persistence, dependencies, retries, and verification states.
-- [ ] Run disposable PS 5.1/PS 7 end-to-end acceptance with focus/minimize, handoff, review, recovery, and cleanup.
-- [ ] Document actual architecture and limitations in WINDOWS_AGENT_TERMINAL_ORCHESTRATION.md.
+- [x] Establish topology bridge in hooks/terminal_topology.py and live-prove exact pane-to-agent mapping.
+- [x] Add exact safe Terminal controls in hooks/terminal_control.py where stable topology supports them.
+- [x] Add SQLite workers/tasks/dependencies/audit persistence in hooks/orchestration_store.py.
+- [x] Add orchestration controller and shared CLI in hooks/orchestrator.py and hooks/worker_runtime.py.
+- [x] Reuse V1 process identity, console control, and launcher installation rather than duplicate them.
+- [x] Add unit tests for topology, persistence, dependencies, delivery failure, retries, and verification states.
+- [x] Run disposable PS 5.1/PS 7 end-to-end acceptance with background/minimize, handoff, review, recovery, and cleanup.
+- [x] Document actual architecture and limitations in WINDOWS_AGENT_TERMINAL_ORCHESTRATION.md.
