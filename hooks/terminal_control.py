@@ -25,6 +25,20 @@ foreach($node in $nodes){
 throw 'STALE_UIA_ELEMENT'
 '''
 
+_CLOSE_TAB_SCRIPT = r'''
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$target=$env:ORCH_UIA_RUNTIME
+$nodes=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+foreach($node in $nodes){
+  if((($node.GetRuntimeId()) -join '.') -ne $target){continue}
+  $buttons=$node.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+  foreach($button in $buttons){if($button.Current.Name -eq 'Close Tab'){$button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke();'OK';exit 0}}
+}
+throw 'STALE_TAB_OR_CLOSE_BUTTON'
+'''
+
 
 def _focus(runtime_id: str, kind: str) -> None:
     env = {**os.environ, "ORCH_UIA_RUNTIME": runtime_id, "ORCH_UIA_KIND": kind}
@@ -61,8 +75,11 @@ def close_exact_pane(topology: dict) -> None:
 
 
 def close_exact_tab(topology: dict) -> None:
-    _focus(topology["tab"]["runtime_id"], "tab")
-    _wt(topology["window_name"], "action", "closeTab")
+    env = {**os.environ, "ORCH_UIA_RUNTIME": topology["tab"]["runtime_id"]}
+    result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _CLOSE_TAB_SCRIPT],
+                            env=env, capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode or "OK" not in result.stdout:
+        raise TerminalControlError(result.stderr.strip() or "STALE_TAB_OR_CLOSE_BUTTON")
 
 
 def resize_exact_pane(topology: dict, direction: str, amount: int = 1) -> None:
