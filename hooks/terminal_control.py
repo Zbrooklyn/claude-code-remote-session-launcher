@@ -2,6 +2,7 @@
 """Exact operations for bridge-owned Windows Terminal topology."""
 from __future__ import annotations
 
+import ctypes
 import os
 import subprocess
 import time
@@ -267,6 +268,40 @@ def _wt(window_name: str, *args: str) -> None:
     result = subprocess.run(["wt.exe", "-w", window_name, *args], capture_output=True, text=True, timeout=20, check=False)
     if result.returncode:
         raise TerminalControlError(result.stderr.strip() or "Windows Terminal command failed.")
+
+
+def ensure_window_area(hwnd: int, width: int = 1500, height: int = 1000) -> bool:
+    """Grow a bridge-owned Terminal window to a workable size without stealing focus.
+
+    A crowded worker grid (2x2 for four workers, 2x3 for six) in a default-sized
+    window produces panes only one text row tall, and a one-row console cannot
+    run and echo a command.  This resizes only a window the caller owns, and
+    uses SWP_NOACTIVATE / SWP_NOZORDER so it neither maximizes to fullscreen nor
+    grabs the foreground away from the user.  It only ever grows the window.
+    """
+    if not hwnd or os.name != "nt":
+        return False
+    user32 = ctypes.windll.user32
+
+    class RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    rect = RECT()
+    if not user32.GetWindowRect(int(hwnd), ctypes.byref(rect)):
+        return False
+    target_w = max(width, rect.right - rect.left)
+    target_h = max(height, rect.bottom - rect.top)
+    SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE = 0x0002, 0x0004, 0x0010
+    return bool(user32.SetWindowPos(int(hwnd), 0, 0, 0, target_w, target_h,
+                                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+
+
+def maximize_window(hwnd: int) -> bool:
+    """Deprecated in favour of ensure_window_area; kept as a fallback lever."""
+    if not hwnd or os.name != "nt":
+        return False
+    return bool(ctypes.windll.user32.ShowWindow(int(hwnd), 3))  # SW_MAXIMIZE
 
 
 def create_tab(window_name: str, engine: str, title: str, command: str) -> None:

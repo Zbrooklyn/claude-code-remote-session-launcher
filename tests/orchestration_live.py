@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "hooks"))
 
 from agent_identity import TargetError, reference_for_pid
 from orchestrator import Orchestrator
+from terminal_control import ensure_window_area
 from terminal_topology import enumerate_topology
 from worker_runtime import terminate_worker
 
@@ -87,6 +88,12 @@ def run(worker_count: int, stage: str = "full") -> dict:
         phase("spawn-main")
         main = control.spawn(f"accept-main-{run_id[-8:]}", "controller", cwd=str(ROOT))
         before_pids.append(main["ref_json"]["pid"])
+        # A default-sized window makes a 2x2/2x3 worker grid one text row tall,
+        # which is a console too short to run a command.  Grow the window we own
+        # (without maximizing to fullscreen or stealing focus) so every worker
+        # pane has workable height before the team is built.
+        ensure_window_area(control.refresh(main["id"])["topology_json"]["window"]["hwnd"])
+        time.sleep(0.4)
         phase("prepare-foreground")
         prior_window = foreground_window()
         evidence["foreground_before"] = prior_window

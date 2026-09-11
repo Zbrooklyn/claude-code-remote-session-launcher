@@ -196,6 +196,22 @@ def read_screen(handles: ConsoleHandles) -> str:
     return buf[:got.value]
 
 
+def console_dimensions(handles: ConsoleHandles) -> dict[str, int]:
+    """Buffer and visible-window size of the attached console, in character cells.
+
+    A one-row visible window cannot run and echo a typed command line, so this
+    is the signal that distinguishes a genuinely queued input from a pane that
+    is simply too short to accept one.
+    """
+    _require_windows()
+    info = CONSOLE_SCREEN_BUFFER_INFO()
+    if not kernel32.GetConsoleScreenBufferInfo(handles.output, ctypes.byref(info)):
+        raise _last_error("GetConsoleScreenBufferInfo")
+    return {"buffer_cols": int(info.dwSize.X), "buffer_rows": int(info.dwSize.Y),
+            "window_cols": int(info.srWindow.Right - info.srWindow.Left + 1),
+            "window_rows": int(info.srWindow.Bottom - info.srWindow.Top + 1)}
+
+
 def console_modes(handles: ConsoleHandles) -> dict[str, int | None]:
     answer: dict[str, int | None] = {}
     for name, handle in (("input", handles.input), ("output", handles.output)):

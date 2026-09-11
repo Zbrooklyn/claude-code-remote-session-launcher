@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from agent_identity import TargetError, list_power_shells, resolve_target, validate_target  # noqa: E402
-from native_console import (ConsoleError, attached_console, console_modes, console_processes,
-                            interrupt_console, read_screen, write_key, write_text)  # noqa: E402
+from native_console import (ConsoleError, attached_console, console_dimensions, console_modes,
+                            console_processes, interrupt_console, read_screen, write_key, write_text)  # noqa: E402
 
 
 def _result(**values):
@@ -59,9 +59,19 @@ def send(value: str, text: str, enter: bool, verify: str | None, timeout: float,
                 break
             time.sleep(0.05)
         phase = "COMMAND_EXECUTED" if verify and observed else ("INPUT_OBSERVED" if observed else "INPUT_QUEUED")
-        return _result(phase=phase, target=ref.to_dict(), records_written=queued,
-                       input_observed=observed, verification_marker=verify,
-                       screen=screen, console_modes=console_modes(handles))
+        try:
+            dimensions = console_dimensions(handles)
+        except ConsoleError:
+            dimensions = None
+        result = _result(phase=phase, target=ref.to_dict(), records_written=queued,
+                         input_observed=observed, verification_marker=verify,
+                         screen=screen, console_modes=console_modes(handles),
+                         console_dimensions=dimensions)
+        # A visible window under two rows cannot run and echo a command line, so
+        # a queued input there is a pane-too-short condition, not a lost target.
+        if phase == "INPUT_QUEUED" and dimensions and dimensions["window_rows"] < 2:
+            result["queued_reason"] = "PANE_TOO_SHORT"
+        return result
 
 
 def key(value: str, name: str, expected_start_time: str | None = None) -> dict:
