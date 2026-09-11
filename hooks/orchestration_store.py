@@ -39,7 +39,7 @@ class Store:
     def _migrate(self) -> None:
         self.conn.executescript("""
         create table if not exists workers (
-          id text primary key, name text not null unique, role text, agent_type text not null,
+          id text primary key, name text not null unique, role text, agent_type text not null, parent_id text,
           state text not null, ref_json text, topology_json text, task_id text,
           last_activity real not null, health_json text not null default '{}', retries integer not null default 0,
           created_at real not null, updated_at real not null);
@@ -52,6 +52,9 @@ class Store:
           id integer primary key autoincrement, at real not null, kind text not null,
           worker_id text, task_id text, detail_json text not null);
         """)
+        columns = {row[1] for row in self.conn.execute("pragma table_info(workers)")}
+        if "parent_id" not in columns:
+            self.conn.execute("alter table workers add column parent_id text")
         self.conn.commit()
 
     def _audit(self, kind: str, worker_id: str | None = None, task_id: str | None = None, **detail) -> None:
@@ -65,12 +68,15 @@ class Store:
                 row[field] = json.loads(row[field])
         return row
 
-    def create_worker(self, name: str, role: str, agent_type: str, worker_id: str | None = None) -> dict:
+    def create_worker(self, name: str, role: str, agent_type: str, worker_id: str | None = None,
+                      parent_id: str | None = None) -> dict:
         now = time.time()
         worker_id = worker_id or f"wrk_{uuid.uuid4().hex}"
-        self.conn.execute("insert into workers(id,name,role,agent_type,state,last_activity,created_at,updated_at) values(?,?,?,?,?,?,?,?)",
-                          (worker_id, name, role, agent_type, "starting", now, now, now))
-        self._audit("worker_created", worker_id, name=name, role=role, agent_type=agent_type)
+        if parent_id:
+            self.worker(parent_id)
+        self.conn.execute("insert into workers(id,name,role,agent_type,parent_id,state,last_activity,created_at,updated_at) values(?,?,?,?,?,?,?,?,?)",
+                          (worker_id, name, role, agent_type, parent_id, "starting", now, now, now))
+        self._audit("worker_created", worker_id, name=name, role=role, agent_type=agent_type, parent_id=parent_id)
         self.conn.commit()
         return self.worker(worker_id)
 

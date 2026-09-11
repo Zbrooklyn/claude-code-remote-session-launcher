@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -58,7 +59,17 @@ $allowedHandles=@(__ALLOWED_HANDLES__)
 $root=[System.Windows.Automation.AutomationElement]::RootElement
 $foreground=[TopologyNative]::GetForegroundWindow().ToInt64()
 $windows=@()
-foreach($win in $root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)) {
+$candidates=@()
+if($allowedHandles.Count -gt 0){
+  # An owned HWND is a stronger scope than a desktop-wide walk and avoids
+  # traversing transient elements in unrelated applications.
+  foreach($knownHandle in $allowedHandles){
+    try {$candidate=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]([int64]$knownHandle)); if($candidate){$candidates+=$candidate}}catch{}
+  }
+} else {
+  $candidates=@($root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition))
+}
+foreach($win in $candidates) {
   if($win.Current.ProcessId -notin $terminalPids){continue}
   if($win.Current.ControlType -ne [System.Windows.Automation.ControlType]::Window){continue}
   $handle=[int64]$win.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty)
@@ -98,13 +109,22 @@ def _uia_snapshot(exhaustive: bool = False, hwnds: list[int] | None = None) -> d
             _UIA_SCRIPT.replace("__EXHAUSTIVE__", "$true" if exhaustive else "$false")
             .replace("__ALLOWED_HANDLES__", handles)
         )
-        result = subprocess.run(
+        process = subprocess.Popen(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=30, check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            creationflags=0x08000000 if os.name == "nt" else 0,
         )
-        if result.returncode:
-            raise TopologyError(result.stderr.strip() or "UI Automation query failed.")
-        return json.loads(result.stdout or '{"windows":[]}')
+        try:
+            stdout, stderr = process.communicate(timeout=12)
+        except subprocess.TimeoutExpired as exc:
+            # UIA can block inside Terminal while its visual tree changes.
+            # This PID is the bridge's own query helper, never a user console.
+            process.kill()
+            process.communicate(timeout=3)
+            raise TopologyError("UI Automation query timed out.") from exc
+        if process.returncode:
+            raise TopologyError(stderr.strip() or "UI Automation query failed.")
+        return json.loads(stdout or '{"windows":[]}')
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         raise TopologyError(f"Could not enumerate Windows Terminal topology: {exc}") from exc
 

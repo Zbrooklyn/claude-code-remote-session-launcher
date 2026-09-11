@@ -46,10 +46,71 @@ class AgentRef:
         return asdict(self)
 
 
+def _native_process(pid: int) -> dict | None:
+    """Read a single same-user process without the WMI service hot path."""
+    if sys.platform != "win32" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        return None
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ = 0x1000, 0x0010
+    handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, False, pid)
+    if not handle:
+        return None
+    try:
+        class FILETIME(ctypes.Structure):
+            _fields_ = (("low", ctypes.c_ulong), ("high", ctypes.c_ulong))
+        created, exited, kernel, user = FILETIME(), FILETIME(), FILETIME(), FILETIME()
+        if not k32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                   ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+        image_size = ctypes.c_ulong(32768)
+        image = ctypes.create_unicode_buffer(image_size.value)
+        if not k32.QueryFullProcessImageNameW(handle, 0, image, ctypes.byref(image_size)):
+            return None
+        class PBI(ctypes.Structure):
+            _fields_ = (("reserved1", ctypes.c_void_p), ("peb", ctypes.c_void_p),
+                        ("reserved2", ctypes.c_void_p * 2), ("process_id", ctypes.c_void_p),
+                        ("reserved3", ctypes.c_void_p))
+        pbi, returned = PBI(), ctypes.c_ulong()
+        if ntdll.NtQueryInformationProcess(handle, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(returned)) != 0:
+            return None
+        def read(address: int, size: int) -> bytes | None:
+            buffer = ctypes.create_string_buffer(size)
+            got = ctypes.c_size_t()
+            if not k32.ReadProcessMemory(handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(got)):
+                return None
+            return buffer.raw[:got.value]
+        peb = read(int(pbi.peb), 0x28)
+        if not peb:
+            return None
+        parameters = int.from_bytes(peb[0x20:0x28], "little")
+        command_header = read(parameters + 0x70, 16)
+        if not command_header:
+            return None
+        command_length = int.from_bytes(command_header[:2], "little")
+        command_buffer = int.from_bytes(command_header[8:16], "little")
+        command_raw = read(command_buffer, command_length) if command_length and command_buffer else b""
+        start = (int(created.high) << 32) | int(created.low)
+        return {
+            "ProcessId": pid,
+            "ParentProcessId": None,
+            "Name": Path(image.value).name,
+            "ExecutablePath": image.value,
+            "CommandLine": command_raw.decode("utf-16-le", errors="replace"),
+            "CreationDate": str(start),
+        }
+    finally:
+        k32.CloseHandle(handle)
+
+
 def _powershell_processes(pid: int | None = None) -> list[dict]:
     """Return the PowerShell/Claude process facts from WMI, never a shell guess."""
     if sys.platform != "win32":
         return []
+    if pid is not None:
+        native = _native_process(pid)
+        if native is not None:
+            return [native]
     filt = "Name='powershell.exe' OR Name='pwsh.exe' OR Name='claude.exe'"
     if pid is not None:
         filt = f"ProcessId={int(pid)}"

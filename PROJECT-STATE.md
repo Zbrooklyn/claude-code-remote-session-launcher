@@ -184,18 +184,46 @@ gate to Ship is live acceptance across all five worker counts on the current sou
 which has not happened. Recovered from the handoff and the plan files; no
 `memory/state-ledger.md` entry exists for this project in Brain.
 
+## Takeover progress, 2026-09-10 late evening
+
+Edward's first objective after the reanchor: keep the running Claude session as MAIN and
+open three Claude workers below it in the same Windows Terminal window. Done and
+Verified, in this session's own window:
+
+- **Adopt-MAIN path added** (`worker_runtime.adopt_main`, `orchestrator adopt-main`).
+  An existing pane host is certified by PID/start time plus a certificate written as
+  its console title and observed on exactly one tab holding exactly one pane. Refresh
+  rebinds by elimination inside the tab that holds the team's certificate panes.
+  Teardown under an adopted MAIN (`_close_adopted_team`) never terminates MAIN and never
+  closes its tab. Unit tests: `tests/test_adopt_main.py`.
+- **Live result:** MAIN 2156 px wide on top; workers 715/711/714 px wide, 1048 px tall,
+  one row; each worker a certified PowerShell host with a live `claude.exe` child in the
+  Brain folder; the three sessions appear as remote-control peers. Foreground window
+  unchanged before and after. Screenshot sent to Edward. Evidence: the scratchpad
+  `main-team-evidence.json` of that session (not in the repo).
+- **Two repo defects found and fixed on the way:**
+  1. `wt -w <id> action closePane` is not a Windows Terminal command; it opened a stray
+     `action` tab with a launch error and hid the target pane from UIA. Removed; the
+     pane-close hotkey is the only mechanism (`terminal_control.close_pane_and_verify`).
+  2. Splits ignored the requested working directory; `split_relative` now passes `-d`.
+     Claude workers had been starting in the home folder at the trust prompt.
+- `terminate_worker` now kills the certified process tree (`taskkill /T`) so a hosted
+  Claude or Codex child cannot outlive its host.
+- `team` accepts `--agent-command` (typed into each worker console after binding).
+
+Still open from the handoff: the 4-worker `INPUT_QUEUED` reproduction, and full live
+acceptance for 1/2/3/4/6 on the current source (no worker count has passed on this exact
+code yet; tonight's MAIN-plus-3 run is a layout and liveness proof, not the harness).
+
 ## Where work continues
 
-1. Push the branch to `origin` as-is, dirty worktree untouched, so the 19 commits are off
-   this machine. Reversible; not a gate.
-2. Reproduce the 4-worker `INPUT_QUEUED` with a disposable team and capture, per the
+1. Reproduce the 4-worker `INPUT_QUEUED` with a disposable team and capture, per the
    handoff: console screen before and after `send`, `records_written`, console modes,
    PID and start time, and the pane's column and row count. Compare to a 3-worker pane.
-3. Write the failing regression test in `tests/test_agentctl.py` or
+2. Write the failing regression test in `tests/test_agentctl.py` or
    `tests/test_orchestrator.py` that pins the real cause, then make the smallest fix that
    keeps `DELIVERY_UNVERIFIED` strict.
-4. Run `py -3.12 tests\orchestration_live.py --workers N --stage full` for N in 1, 2, 3,
+3. Run `py -3.12 tests\orchestration_live.py --workers N --stage full` for N in 1, 2, 3,
    4, 6, sequentially, as hidden background processes with separate stdout and stderr
    logs. Each must print `"status": "PASS"` and end with zero `ORCH_` processes.
-5. Tick the plan file, commit the worktree in coherent units, push, and update the
-   handoff.
+4. Tick the plan file and update the handoff.

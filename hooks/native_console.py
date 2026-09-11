@@ -73,6 +73,25 @@ if sys.platform == "win32":
     kernel32.SetConsoleCtrlHandler.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.GetConsoleTitleW.argtypes = [wintypes.LPWSTR, DWORD]
+    kernel32.GetConsoleTitleW.restype = DWORD
+    kernel32.SetConsoleTitleW.argtypes = [wintypes.LPCWSTR]
+    kernel32.SetConsoleTitleW.restype = wintypes.BOOL
+
+
+def console_title() -> str:
+    """Title of the console this process is currently attached to."""
+    _require_windows()
+    buffer = ctypes.create_unicode_buffer(1024)
+    length = kernel32.GetConsoleTitleW(buffer, 1024)
+    return buffer.value[:length]
+
+
+def set_console_title(text: str) -> None:
+    """Set the title of the currently attached console (ConPTY forwards it to Terminal)."""
+    _require_windows()
+    if not kernel32.SetConsoleTitleW(text):
+        raise _last_error("SetConsoleTitle")
 
 
 @dataclass
