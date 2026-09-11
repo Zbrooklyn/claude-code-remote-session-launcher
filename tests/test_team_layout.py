@@ -40,7 +40,29 @@ def test_normalization_stops_after_the_first_already_converged_measurement(monke
     })
     monkeypatch.setattr(team_layout, "converge_pair", lambda *_: converges.append(True) or {"iterations": 0, "converged": True})
 
-    team_layout.normalize_main_and_workers(object(), "main", [worker["id"] for worker in workers])
+    result = team_layout.normalize_main_and_workers(object(), "main", [worker["id"] for worker in workers])
 
-    assert len(converges) == 3  # MAIN plus two adjacent worker pairs.
-    assert len(refreshes) == 10  # initial 4, one measured round of 3, final 3.
+    # An already-balanced fresh team (equal cells here) hits the early-exit and
+    # does no convergence work at all -- the change that keeps foreground runs fast.
+    assert len(converges) == 0
+    assert result["main"].get("skipped") == "already balanced"
+    assert len(refreshes) == 4  # main + three workers, then the balance check; no convergence rounds.
+
+
+def test_normalization_converges_a_skewed_team(monkeypatch):
+    main = {"id": "main", "topology_json": {"pane": {"runtime_id": "main"}}}
+    workers = [
+        {"id": "one", "topology_json": {"pane": {"runtime_id": "one"}}},
+        {"id": "two", "topology_json": {"pane": {"runtime_id": "two"}}},
+    ]
+    by_id = {w["id"]: w for w in [main, *workers]}
+    converges = []
+    monkeypatch.setattr(team_layout, "refresh_worker_topology", lambda _s, wid: by_id[wid])
+    # MAIN 50/50 in height, but the two workers are 60/40 in width -> not balanced.
+    monkeypatch.setattr(team_layout, "measured", lambda _: {
+        "main": (0, 0, 1000, 500), "one": (0, 500, 600, 500), "two": (600, 500, 400, 500)})
+    monkeypatch.setattr(team_layout, "converge_pair", lambda *a, **k: converges.append(True) or {"iterations": 1, "converged": True})
+
+    team_layout.normalize_main_and_workers(object(), "main", ["one", "two"])
+
+    assert len(converges) >= 1  # a skewed team is actually converged, not skipped.

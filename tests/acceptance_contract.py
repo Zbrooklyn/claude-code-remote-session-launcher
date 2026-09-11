@@ -151,7 +151,9 @@ def run(worker_count: int) -> dict:
             rejected = control.verify_task(q_task["id"], f"APPROVED_{run_id[:6]}", by_role["qa"]["id"])
             rej_ok = (not rejected["verified"]) and control.store.task(q_task["id"])["state"] == "reviewing"
             ev.record("qa_reject", rej_ok, {"verified": rejected["verified"], "task_state": control.store.task(q_task["id"])["state"]})
-            control.handoff_role("qa", "frontend", q_task["id"], f"Write-Output 'APPROVED_{run_id[:6]}'")
+            # Repair routes back to the task's OWNER (frontend), not a handoff from
+            # QA, which never owned it. QA only reviews.
+            control.dispatch_role("frontend", q_task["id"], f"Write-Output 'APPROVED_{run_id[:6]}'")
             approved = control.verify_task(q_task["id"], f"APPROVED_{run_id[:6]}", by_role["qa"]["id"])
             ev.record("qa_correct_reverify", approved["verified"], {"verified": approved["verified"]})
             ev.record("no_false_completion", rej_ok, "QA rejection put task in 'reviewing', not 'done'")

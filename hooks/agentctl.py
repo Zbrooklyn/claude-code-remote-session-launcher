@@ -42,8 +42,29 @@ def send(value: str, text: str, enter: bool, verify: str | None, timeout: float,
          expected_start_time: str | None = None) -> dict:
     ref = _validated(value, expected_start_time)
     with attached_console(ref.pid) as handles:
+        # Right after a split or a layout normalization, Windows Terminal can
+        # briefly report a one-row console for a pane that is really taller, and
+        # a one-row console cannot run a typed command.  Let a too-short console
+        # settle before writing.  A pane that is genuinely too small never grows,
+        # so this times out quickly and the PANE_TOO_SHORT result below stands.
+        settle_deadline = time.monotonic() + 4.0
+        while time.monotonic() < settle_deadline:
+            try:
+                if console_dimensions(handles)["window_rows"] >= 2:
+                    break
+            except ConsoleError:
+                break
+            time.sleep(0.2)
         before = read_screen(handles)
-        prior_marker_count = before.count(verify) if verify else 0
+        # A long command wraps across rows in a narrow pane, and the console
+        # buffer pads the wrap with spaces, which can split the marker so a
+        # plain count misses the echoed copy.  The marker has no whitespace, so
+        # count it against a whitespace-collapsed screen: wrap/padding can no
+        # longer break it, and a random unique marker makes a false join
+        # impossible.
+        def _seen(s: str) -> int:
+            return "".join(s.split()).count(verify)
+        prior_marker_count = _seen(before) if verify else 0
         queued = write_text(handles, text)
         if enter:
             queued += write_key(handles, "enter")
@@ -51,13 +72,32 @@ def send(value: str, text: str, enter: bool, verify: str | None, timeout: float,
         screen, observed = before, False
         while time.monotonic() < deadline:
             screen = read_screen(handles)
-            # A command marker appears once while PowerShell echoes the typed
-            # command and a second time only after Write-Output executes it.
-            # Do not call input echo command completion.
-            observed = (screen.count(verify) >= prior_marker_count + 2) if verify else (screen != before or text in screen)
+            # The marker appears once while PowerShell echoes the typed command
+            # and a second time only after Write-Output executes it.  Input echo
+            # alone is never called completion.
+            observed = (_seen(screen) >= prior_marker_count + 2) if verify else (screen != before or text in screen)
             if observed:
                 break
             time.sleep(0.05)
+        if verify and not observed and enter:
+            # The typed line can fail to submit when the pane is busy repainting
+            # (seen right after an in-place recovery).  If the pane is tall enough
+            # to run a command, press Enter once more and poll again.  Re-pressing
+            # Enter only submits what is already typed; the marker still proves
+            # whether it actually ran, so this never fakes completion.
+            try:
+                tall = console_dimensions(handles)["window_rows"] >= 2
+            except ConsoleError:
+                tall = False
+            if tall:
+                write_key(handles, "enter")
+                retry_deadline = time.monotonic() + 6.0
+                while time.monotonic() < retry_deadline:
+                    screen = read_screen(handles)
+                    if _seen(screen) >= prior_marker_count + 2:
+                        observed = True
+                        break
+                    time.sleep(0.05)
         phase = "COMMAND_EXECUTED" if verify and observed else ("INPUT_OBSERVED" if observed else "INPUT_QUEUED")
         try:
             dimensions = console_dimensions(handles)

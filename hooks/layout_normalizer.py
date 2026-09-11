@@ -21,7 +21,7 @@ def ratio(first: dict, second: dict, axis: str) -> float:
     return _pair_measurement(first, second, axis)[0]
 
 
-def converge_pair(first: dict, second: dict, axis: str, target: float, tolerance: float=.01, steps: int=80) -> dict:
+def converge_pair(first: dict, second: dict, axis: str, target: float, tolerance: float=.01, steps: int=16) -> dict:
     for iteration in range(steps):
         current, span=_pair_measurement(first,second,axis)
         if abs(current-target)<=tolerance:

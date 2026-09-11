@@ -39,14 +39,38 @@ def refresh_all(store, ids: list[str]) -> list[dict]:
     return [refresh_worker_topology(store, worker_id) for worker_id in ids]
 
 
-def normalize_main_and_workers(store, main_id: str, worker_ids: list[str], tolerance: float=.01) -> dict:
+def _balanced(main, workers, tolerance: float) -> bool:
+    """True when MAIN height and each row's worker widths are already within tolerance.
+
+    The relative --size splits in create_workers usually land equal cells, so a
+    fresh team is often balanced already; skipping convergence then avoids ~100
+    PowerShell/UIA launches (the dominant cost of normalization)."""
+    bounds = measured(main["topology_json"])
+    mrect = bounds.get(main["topology_json"]["pane"]["runtime_id"])
+    wrects = [bounds.get(w["topology_json"]["pane"]["runtime_id"]) for w in workers]
+    if not mrect or any(r is None for r in wrects):
+        return False
+    # MAIN vs the first worker share the top splitter: heights near 50/50.
+    mh, wh = mrect[3], wrects[0][3]
+    if abs(mh / (mh + wh) - .5) > tolerance:
+        return False
+    rows: dict[int, list[float]] = {}
+    for r in wrects:
+        rows.setdefault(round(r[1] / 25), []).append(r[2])
+    return all(max(w) - min(w) <= max(w) * (tolerance * 2) for w in rows.values())
+
+
+def normalize_main_and_workers(store, main_id: str, worker_ids: list[str], tolerance: float=.02) -> dict:
     """Converge MAIN height and equivalent sibling columns/rows from UIA geometry."""
     main=refresh_worker_topology(store,main_id)
     workers=refresh_all(store,worker_ids)
+    if _balanced(main, workers, tolerance):
+        return {"main":{"ratio":.5,"iterations":0,"converged":True,"skipped":"already balanced"},
+                "bounds":measured(main["topology_json"]),"workers":workers}
     # use a worker sharing MAIN's first horizontal splitter
     main_result=converge_pair(main["topology_json"],workers[0]["topology_json"],"height",.5,tolerance)
     # Equalize panes by repeatedly compare every worker to the first in its row.
-    for _ in range(8):
+    for _ in range(5):
         workers=refresh_all(store,worker_ids)
         bounds=measured(main["topology_json"])
         adjusted = False

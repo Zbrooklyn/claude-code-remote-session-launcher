@@ -349,7 +349,11 @@ def send_worker(store: Store, worker_id: str, command: str, marker: str | None =
     ref = worker["ref_json"]
     if not ref:
         raise WorkerRuntimeError(f"Worker {worker_id} has no live AgentRef.")
-    result = send_console(str(ref["pid"]), command, True, marker, 5.0, ref["process_start_time"])
+    # 10s, not 5s: a busy pane (several workers echoing at once) can take longer
+    # than five seconds to echo the marker twice, and a false INPUT_QUEUED there
+    # blocks a task that actually ran.  Success still returns as soon as the
+    # marker is observed, so the longer ceiling costs nothing on the happy path.
+    result = send_console(str(ref["pid"]), command, True, marker, 10.0, ref["process_start_time"])
     store.update_worker(worker_id, state="working", health={**(worker.get("health_json") or {}), "reachable": True, "last_phase": result["phase"]})
     return result
 
