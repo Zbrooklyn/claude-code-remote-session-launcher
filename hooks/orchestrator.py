@@ -55,6 +55,11 @@ class Orchestrator:
         """Certify an already-running pane host (e.g. this Claude session) as MAIN."""
         return adopt_main(self.store, name, int(pid), agent_type)
 
+    def adopt_here(self, name: str, agent_type: str = "claude") -> dict:
+        """Adopt the MAIN session that invoked this CLI, resolving its pane host."""
+        from self_identity import main_pane_host_pid
+        return adopt_main(self.store, name, main_pane_host_pid(), agent_type)
+
     def team(self, main_id: str, roles: list[str], engine: str = "powershell.exe",
              agent_type: str = "claude", cwd: str | None = None,
              agent_command: str | None = None) -> dict:
@@ -347,6 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("spawn"); p.add_argument("name"); p.add_argument("role"); p.add_argument("--engine", default="powershell.exe"); p.add_argument("--parent"); p.add_argument("--agent-type", default="powershell"); p.add_argument("--cwd"); p.add_argument("--direction", choices=("left", "right", "up", "down"), default="right")
     p = sub.add_parser("adopt-main"); p.add_argument("name"); p.add_argument("pid", type=int); p.add_argument("--agent-type", choices=("powershell", "claude", "codex"), default="claude")
+    p = sub.add_parser("adopt-here"); p.add_argument("name"); p.add_argument("--agent-type", choices=("powershell", "claude", "codex"), default="claude")
     p = sub.add_parser("team"); p.add_argument("main"); p.add_argument("roles", nargs="+"); p.add_argument("--engine", default="powershell.exe"); p.add_argument("--agent-type", choices=("powershell", "claude", "codex"), default="claude"); p.add_argument("--cwd"); p.add_argument("--agent-command", help="interactive command typed into each worker console (default: the agent type)")
     p = sub.add_parser("task-create"); p.add_argument("title"); p.add_argument("--parent")
     p = sub.add_parser("depends"); p.add_argument("task"); p.add_argument("dependency")
@@ -371,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "spawn": out = control.spawn(args.name, args.role, args.engine, args.parent, args.agent_type, args.cwd, args.direction)
         elif args.command == "adopt-main": out = control.adopt_main(args.name, args.pid, args.agent_type)
+        elif args.command == "adopt-here": out = control.adopt_here(args.name, args.agent_type)
         elif args.command == "team": out = control.team(args.main, args.roles, args.engine, args.agent_type, args.cwd, args.agent_command)
         elif args.command == "task-create": out = control.create_task(args.title, args.parent)
         elif args.command == "depends": control.add_dependency(args.task, args.dependency); out = {"ok": True}
@@ -388,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "tasks": out = control.store.tasks()
         else: out = control.store.audit()
         _json(out); return 0
-    except (OrchestrationError, WorkerRuntimeError, ValueError, KeyError) as exc:
+    except (OrchestrationError, WorkerRuntimeError, ValueError, KeyError, OSError) as exc:
         _json({"ok": False, "error": str(exc)}); return 1
 
 

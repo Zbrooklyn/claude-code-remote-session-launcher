@@ -270,31 +270,42 @@ def _wt(window_name: str, *args: str) -> None:
         raise TerminalControlError(result.stderr.strip() or "Windows Terminal command failed.")
 
 
-def ensure_window_area(hwnd: int, width: int = 1500, height: int = 1000) -> bool:
-    """Grow a bridge-owned Terminal window to a workable size without stealing focus.
+class _RECT(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
-    A crowded worker grid (2x2 for four workers, 2x3 for six) in a default-sized
-    window produces panes only one text row tall, and a one-row console cannot
-    run and echo a command.  This resizes only a window the caller owns, and
-    uses SWP_NOACTIVATE / SWP_NOZORDER so it neither maximizes to fullscreen nor
-    grabs the foreground away from the user.  It only ever grows the window.
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT),
+                ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
+
+
+def ensure_window_area(hwnd: int) -> bool:
+    """Fill the monitor work area for a bridge-owned Terminal window, calmly.
+
+    A crowded worker grid (2x2 for four workers, 2x3 for six) needs the same
+    usable height a maximized window has, or the panes come out one text row
+    tall and a one-row console cannot run and echo a command.  This sizes the
+    window to the monitor's work area (like maximize) but via SetWindowPos with
+    SWP_NOACTIVATE, so it neither flashes to fullscreen nor steals the
+    foreground.  Only for a window the caller owns.
     """
     if not hwnd or os.name != "nt":
         return False
     user32 = ctypes.windll.user32
-
-    class RECT(ctypes.Structure):
-        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
-                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
-
-    rect = RECT()
-    if not user32.GetWindowRect(int(hwnd), ctypes.byref(rect)):
+    MONITOR_DEFAULTTONEAREST = 2
+    monitor = user32.MonitorFromWindow(int(hwnd), MONITOR_DEFAULTTONEAREST)
+    if not monitor:
         return False
-    target_w = max(width, rect.right - rect.left)
-    target_h = max(height, rect.bottom - rect.top)
-    SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE = 0x0002, 0x0004, 0x0010
-    return bool(user32.SetWindowPos(int(hwnd), 0, 0, 0, target_w, target_h,
-                                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+    info = _MONITORINFO()
+    info.cbSize = ctypes.sizeof(_MONITORINFO)
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return False
+    work = info.rcWork
+    SWP_NOZORDER, SWP_NOACTIVATE = 0x0004, 0x0010
+    return bool(user32.SetWindowPos(int(hwnd), 0, work.left, work.top,
+                                    work.right - work.left, work.bottom - work.top,
+                                    SWP_NOZORDER | SWP_NOACTIVATE))
 
 
 def maximize_window(hwnd: int) -> bool:
