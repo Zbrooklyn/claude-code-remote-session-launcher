@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Spawned sessions were not saved when launched from inside a Claude Code
+  session.** The launcher inherited the caller's session markers
+  (`CLAUDE_CODE_CHILD_SESSION=1`, `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, ...),
+  so `claude.exe` treated the new window as a nested child and disabled
+  transcript writes and its `~/.claude/sessions` entry. The session ran and
+  showed in remote control, but left no local history: it could not be
+  resumed and `/window-live`, `/window-status`, `/window-resume` could not see
+  it. `spawn-window.py` now strips those markers and sets
+  `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1` for every launch path.
+- **`--name` now also sets the local session name** (`claude --name`), so the
+  name shown in remote control and the name the `/window-*` tools match on are
+  the same.
+- **Resume keeps the session's existing name** (read from its transcript)
+  instead of renaming it to a newly generated one.
+
 ## [1.0.0] - 2026-05-27
 
 First stable release. The launcher can now see, find, and resume the full

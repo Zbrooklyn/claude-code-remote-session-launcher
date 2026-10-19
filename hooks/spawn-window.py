@@ -43,7 +43,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from claude_env import claude_binary_or_die  # noqa: E402
+from claude_env import claude_binary_or_die, claude_home  # noqa: E402
 
 CONFIG_PATH = Path.home() / ".claude" / "window-config.json"
 CLAUDE_GLOBAL_JSON = Path.home() / ".claude.json"
@@ -240,7 +240,57 @@ def session_name(mode: str, label: str | None = None) -> str:
     return f"{host}-{mode}-{ts}"
 
 
-def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, sess_name: str, resume_id: str | None = None) -> list[str]:
+# Session markers a running Claude Code session exports to its tool processes.
+# If the launcher is run from inside a session (e.g. via a slash command), the
+# spawned claude.exe inherits them, decides it is a nested child session, and
+# silently disables transcript writes and its ~/.claude/sessions registry entry.
+# The session still runs and still appears in remote control, but leaves no
+# local history, so it cannot be resumed and /window-* tools cannot see it.
+PARENT_SESSION_ENV = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+)
+
+
+def clean_spawn_env(base: dict | None = None) -> dict:
+    """Env for a spawned top-level session: the caller's env minus the parent
+    session's markers, with transcript persistence forced on."""
+    env = dict(os.environ if base is None else base)
+    for key in PARENT_SESSION_ENV:
+        env.pop(key, None)
+    env["CLAUDE_CODE_FORCE_SESSION_PERSISTENCE"] = "1"
+    return env
+
+
+def existing_session_title(session_id: str) -> str | None:
+    """Latest custom title stored in a session's transcript, or None.
+
+    Used on resume so the session keeps the name it already has instead of
+    being renamed to a freshly generated one."""
+    title = None
+    for f in (claude_home() / "projects").glob(f"*/{session_id}.jsonl"):
+        try:
+            with open(f, encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    if '"custom-title"' in line:
+                        try:
+                            title = json.loads(line).get("customTitle") or title
+                        except ValueError:
+                            pass
+        except OSError:
+            pass
+    return title
+
+
+def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, sess_name: str, resume_id: str | None = None, label: str | None = None) -> list[str]:
     args = [claude_binary_or_die()]
     if resume_id:
         # --resume reopens an existing session by id. Perm/remote/worktree flags
@@ -251,6 +301,10 @@ def build_claude_args(mode: str, cfg: dict, prompt: str | None, worktree: bool, 
         args.append("--dangerously-skip-permissions")
     if cfg["remote"]:
         args.extend(["--remote-control", sess_name])
+    if label:
+        # Same display name locally as in remote control, so the /window-*
+        # tools find the session by the name shown in the app.
+        args.extend(["--name", sess_name])
     if worktree:
         args.append("--worktree")
     if prompt:
@@ -280,8 +334,9 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         return 1
 
     # Generate session name ONCE so the print matches what was passed to claude.exe.
-    sess_name = session_name(mode, label)
-    claude_args = build_claude_args(mode, cfg, prompt, worktree, sess_name, resume_id)
+    # A resumed session keeps the name it already has.
+    sess_name = (existing_session_title(resume_id) if resume_id else None) or session_name(mode, label)
+    claude_args = build_claude_args(mode, cfg, prompt, worktree, sess_name, resume_id, label)
     verb = "Resumed" if resume_id else "Launched"
     title = f"{mode}: {Path(cwd).name}"
     profile = "Claude Code (Yolo)" if cfg["yolo"] else "Claude Code"
@@ -301,7 +356,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
             "--", *claude_args,
         ]
         try:
-            subprocess.Popen(wt_args, close_fds=True)
+            subprocess.Popen(wt_args, close_fds=True, env=clean_spawn_env())
             print(f"{verb} daemon ({mode}) in {cwd}. Remote session: {sess_name}")
             print("Reach it at claude.ai/code or the official mobile app.")
             print("A new Windows Terminal window opened — minimize it manually if you want it out of sight.")
@@ -327,7 +382,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         "--", *claude_args,
     ]
     try:
-        subprocess.Popen(wt_args, close_fds=True)
+        subprocess.Popen(wt_args, close_fds=True, env=clean_spawn_env())
         msg = f"{verb} terminal ({mode}) in {cwd}"
         if win_target != "0":
             msg += f" [window: {win_target}]"
@@ -341,7 +396,7 @@ def launch(mode: str, workspace: str | None, prompt: str | None, worktree: bool,
         claude_cmd = " ".join(shlex.quote(a) for a in claude_args)
         fallback = ["cmd", "/c", "start", "cmd", "/k", f'cd /d "{cwd}" && {claude_cmd}']
         try:
-            subprocess.Popen(fallback, close_fds=True)
+            subprocess.Popen(fallback, close_fds=True, env=clean_spawn_env())
             print(f"{verb} ({mode}) via cmd fallback in {cwd}")
             log_spawn(mode, cwd, sess_name if cfg["remote"] else "", prompt, worktree, label, resume_id)
             return 0
