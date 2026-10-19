@@ -76,3 +76,60 @@ def test_build_claude_args_dies_without_binary(monkeypatch):
     monkeypatch.setattr(claude_env, "find_claude_binary", lambda: None)
     with pytest.raises(SystemExit):
         sw.build_claude_args("window", sw.MODES["window"], None, False, "n")
+
+
+# ---------- spawned sessions are top-level, not nested children ----------
+
+def test_clean_spawn_env_strips_parent_session_markers():
+    parent = {
+        "PATH": "/bin",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_SESSION_ID": "parent-sid",
+        "CLAUDE_CODE_MESSAGING_TOKEN": "tok",
+        "CLAUDE_PID": "123",
+    }
+    env = sw.clean_spawn_env(parent)
+    for key in sw.PARENT_SESSION_ENV:
+        assert key not in env
+    assert env["PATH"] == "/bin"
+    assert env["CLAUDE_CODE_FORCE_SESSION_PERSISTENCE"] == "1"
+
+
+def test_clean_spawn_env_does_not_mutate_caller_env():
+    parent = {"CLAUDE_CODE_CHILD_SESSION": "1"}
+    sw.clean_spawn_env(parent)
+    assert parent == {"CLAUDE_CODE_CHILD_SESSION": "1"}
+
+
+def test_build_claude_args_label_sets_matching_local_name(monkeypatch):
+    import claude_env
+    monkeypatch.setattr(claude_env, "find_claude_binary", lambda: "/x/claude")
+    args = sw.build_claude_args("window-yolo-remote", sw.MODES["window-yolo-remote"],
+                                None, False, "host-foo-120000", label="foo")
+    i = args.index("--name")
+    assert args[i + 1] == "host-foo-120000"
+    assert args[args.index("--remote-control") + 1] == "host-foo-120000"
+
+
+def test_build_claude_args_no_label_no_name(monkeypatch):
+    import claude_env
+    monkeypatch.setattr(claude_env, "find_claude_binary", lambda: "/x/claude")
+    args = sw.build_claude_args("window", sw.MODES["window"], None, False, "n")
+    assert "--name" not in args
+
+
+def test_existing_session_title_returns_latest(claude_home):
+    proj = claude_home / "projects" / "C--work"
+    proj.mkdir()
+    (proj / "SID1.jsonl").write_text(
+        '{"type":"custom-title","customTitle":"first"}\n'
+        '{"type":"user","message":"hi"}\n'
+        '{"type":"custom-title","customTitle":"host-foo-120000"}\n',
+        encoding="utf-8",
+    )
+    assert sw.existing_session_title("SID1") == "host-foo-120000"
+
+
+def test_existing_session_title_missing_is_none(claude_home):
+    assert sw.existing_session_title("NOPE") is None
